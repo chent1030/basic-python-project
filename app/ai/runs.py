@@ -26,6 +26,14 @@ def _session_factory():
     return datasources.get_session_factory(settings.agents.session_datasource)
 
 
+def _available() -> bool:
+    """运行记录所用数据源是否就绪。未就绪时所有读写静默降级(不报错)。
+
+    运行记录是辅助功能(状态监控),DB 不可用不应阻塞 agent 主流程。
+    """
+    return settings.agents.session_datasource in datasources._session_factories
+
+
 def _new_run_id() -> str:
     return uuid.uuid4().hex
 
@@ -47,8 +55,13 @@ class RunStore:
         parent_run_id: str | None = None,
         depth: int = 0,
     ) -> str:
-        """创建一条 running 状态的运行记录,返回它的 run_id。"""
+        """创建一条 running 状态的运行记录,返回它的 run_id。
+
+        DB 不可用或写失败时静默降级(返回一个未落库的 run_id),不影响 agent 主流程。
+        """
         run_id = _new_run_id()
+        if not _available():
+            return run_id
         try:
             async with _session_factory()() as session:
                 session.add(
@@ -65,7 +78,7 @@ class RunStore:
                 )
                 await session.commit()
         except Exception:
-            log.exception("创建 agent_run 失败 agent=%s", agent_name)
+            log.debug("创建 agent_run 失败(数据源可能不可用) agent=%s", agent_name, exc_info=True)
         return run_id
 
     async def mark_succeeded(
@@ -92,6 +105,8 @@ class RunStore:
         tokens: int | None,
         error: str | None,
     ) -> None:
+        if not _available():
+            return
         try:
             now = _now()
             # finished_at 用 Python 侧 now;duration_ms 需要起始时间(由调用方/日志补)
@@ -110,10 +125,15 @@ class RunStore:
                 await session.execute(stmt)
                 await session.commit()
         except Exception:
-            log.exception("更新 agent_run 失败 run_id=%s status=%s", run_id, status)
+            log.debug(
+                "更新 agent_run 失败(数据源可能不可用) run_id=%s status=%s",
+                run_id, status, exc_info=True,
+            )
 
     async def set_duration(self, run_id: str, duration_ms: int) -> None:
         """回填耗时(毫秒)。单独一个方法,gateway 在算完耗时后调。"""
+        if not _available():
+            return
         try:
             async with _session_factory()() as session:
                 await session.execute(
@@ -123,7 +143,7 @@ class RunStore:
                 )
                 await session.commit()
         except Exception:
-            log.exception("回填 duration_ms 失败 run_id=%s", run_id)
+            log.debug("回填 duration_ms 失败(数据源可能不可用) run_id=%s", run_id, exc_info=True)
 
     # ---------- 查询(状态监控/看板用)----------------------------------
     async def list_runs(
@@ -134,7 +154,21 @@ class RunStore:
 
         include_children=True 时,额外包含以这些运行为祖先的成员/子 agent 调用
         (用于复合拓扑的监控视图:看到顶层 agent + 它调用的所有成员)。
+        DB 不可用时返回空列表(不抛错)。
         """
+        if not _available():
+            return []
+        try:
+            return await self._list_runs_impl(
+                agent_name, limit=limit, status=status, include_children=include_children
+            )
+        except Exception:
+            log.debug("查询 agent_runs 失败(数据源可能不可用) agent=%s", agent_name, exc_info=True)
+            return []
+
+    async def _list_runs_impl(
+        self, agent_name: str, *, limit: int, status: str | None, include_children: bool
+    ) -> list[dict[str, Any]]:
         async with _session_factory()() as session:
             stmt = select(AgentRun).where(AgentRun.agent_name == agent_name)
             if status:
@@ -178,7 +212,17 @@ class RunStore:
         """取以某 run_id 为根的整棵调用树。
 
         先取该根节点,再取所有 parent_run_id 链上可达的后代(按 depth/parent 组织)。
+        DB 不可用时返回空树(不抛错)。
         """
+        if not _available():
+            return {"root": None, "tree": []}
+        try:
+            return await self._get_tree_impl(root_run_id)
+        except Exception:
+            log.debug("查询调用树失败(数据源可能不可用) run_id=%s", root_run_id, exc_info=True)
+            return {"root": None, "tree": []}
+
+    async def _get_tree_impl(self, root_run_id: str) -> dict[str, Any]:
         async with _session_factory()() as session:
             # 根节点
             root_stmt = select(AgentRun).where(AgentRun.run_id == root_run_id)

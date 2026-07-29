@@ -34,7 +34,11 @@ class SubagentRunner(BaseRunner):
         self._agent = None  # 惰性构建的 deepagents CompiledStateGraph
 
     def _build_subagents(self) -> list[dict]:
-        """把 config.subagents(引用的 agent 名)转成 deepagents SubAgent dict。"""
+        """把 config.subagents(引用的 agent 名)转成 deepagents SubAgent TypedDict。
+
+        deepagents SubAgent 必填字段:name / description / system_prompt。
+        (注意:字段名是 system_prompt,不是 prompt —— 用错会 KeyError。)
+        """
         from app.ai.registry import registry
 
         subs: list[dict] = []
@@ -44,12 +48,13 @@ class SubagentRunner(BaseRunner):
                 # 子 agent 只取 single 语义的部分(provider/prompt/tools)
                 tools = [_lc_tool(t) for t in resolve_tools(sub_cfg.tools, exclusive_agent=name)]
                 provider = sub_cfg.provider or None
+                sys_prompt = sub_cfg.system_prompt or "You are a helpful assistant."
                 subs.append(
                     {
                         "name": name,
-                        "description": sub_cfg.system_prompt[:200]
-                        or f"子 agent {name}",
-                        "prompt": sub_cfg.system_prompt or "You are a helpful assistant.",
+                        # description:让主 agent 知道何时委派给该子 agent(取 system_prompt 摘要)
+                        "description": (sys_prompt[:200] if sys_prompt else f"子 agent {name}"),
+                        "system_prompt": sys_prompt,
                         "tools": tools,
                         "model": _resolve_sub_model(provider),
                     }

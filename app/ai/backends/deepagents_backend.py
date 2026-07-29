@@ -12,12 +12,10 @@ deepagents 的特有能力(subagents / filesystem / planning)在 single 拓扑�
 """
 from __future__ import annotations
 
-import inspect
 from collections.abc import AsyncIterator
 from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage
-from langchain_core.tools import StructuredTool
 
 from app.ai.base import AgentResult, BaseBackend
 from app.ai.config import AgentConfig
@@ -28,30 +26,21 @@ log = get_logger("app.ai.backend.deepagents")
 
 
 def _to_lc_tool(tdef: ToolDef) -> Any:
-    """把 ToolDef 包成 LangChain StructuredTool。
+    """把 ToolDef 包成 LangChain BaseTool(deepagents 接受)。
 
-    deepagents 接受 callable 或 BaseTool;用 StructuredTool 统一同步/异步,
-    并把 docstring 作为描述、签名作为参数 schema 喂给 LLM。
+    用 langchain_core 的 @tool 装饰器包裹原始函数 —— 它会从函数签名 + type hints
+    自动推断 args_schema(参数名/类型/必填),这是 StructuredTool.from_function
+    做不到的(后者不推断 schema,导致 LLM 调用时不传参数)。
+    装饰后用 tdef.name/description 覆盖名字与描述(支持自定义工具名)。
     """
-    description = tdef.description or tdef.name
+    from langchain_core.tools import tool as lc_tool
 
-    async def _acall(**kwargs: Any) -> str:
-        return str(await tdef.func(**kwargs))
-
-    def _sync(**kwargs: Any) -> str:
-        import asyncio
-
-        coro = tdef.func(**kwargs)
-        if inspect.isawaitable(coro):
-            return str(asyncio.get_event_loop().run_until_complete(coro))
-        return str(coro)
-
-    return StructuredTool.from_function(
-        coroutine=_acall if tdef.is_async else None,
-        func=_sync if not tdef.is_async else None,
-        name=tdef.name,
-        description=description,
-    )
+    tool_obj = lc_tool(tdef.func)
+    # 覆盖名字/描述为 ToolDef 里登记的(可能与函数名不同)
+    tool_obj.name = tdef.name
+    if tdef.description:
+        tool_obj.description = tdef.description
+    return tool_obj
 
 
 def _messages_to_lc(messages: list[dict]) -> list[BaseMessage]:

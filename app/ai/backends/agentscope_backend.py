@@ -24,17 +24,24 @@ log = get_logger("app.ai.backend.agentscope")
 
 
 def _to_agentscope_tool(tdef: ToolDef) -> Any:
-    """把 ToolDef 包成 agentscope 的 Tool。
+    """把 ToolDef 包成 agentscope 2.0 的 FunctionTool。
 
-    agentscope 的 tool 装饰器接受普通函数(async 同步均可)。这里惰性 import,
-    并用 agentscope 自己的工具装饰器以获得正确的 schema。
+    agentscope 2.0 用 FunctionTool(func, name, description) 把普通函数包成工具
+    (async/同步均可),再用 Toolkit.add_tool 加入。
+
+    重要:agentscope 默认对「非只读」工具触发权限确认(RequireUserConfirmEvent,
+    等用户确认才执行),这在无交互的自动化场景会让 agent 卡住。
+    我们的框架已有自己的中间件(filter)做安全控制,不依赖 agentscope 的 HITL,
+    故这里统一设 is_read_only=True,走 agentscope 的只读 fast path(自动 ALLOW)。
     """
-    from agentscope.tool import register_tool  # type: ignore
+    from agentscope.tool import FunctionTool
 
-    # 动态构造一个 ToolBase 子类太重;agentscope 提供 register_tool 装饰器。
-    # 直接用它的装饰器包裹原始函数。
-    decorated = register_tool()(tdef.func)
-    return decorated
+    return FunctionTool(
+        func=tdef.func,
+        name=tdef.name,
+        description=tdef.description or tdef.name,
+        is_read_only=True,
+    )
 
 
 def _to_agentscope_messages(messages: list[dict]) -> list[Any]:

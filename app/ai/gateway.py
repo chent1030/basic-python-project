@@ -33,7 +33,23 @@ class AgentGateway:
 
     # ---------- lifecycle ---------------------------------------------
     async def startup(self) -> None:
-        """加载全局工具 + registry。复用已就绪的 LLM provider(由 llm.startup() 准备)。"""
+        """加载全局工具 + registry。确保 LLM provider 已就绪。
+
+        幂等:若 llm 已 startup(app lifespan 先调过)则不重复;否则在此补启,
+        保证独立脚本/demo 里只调 agent_gateway.startup() 也能用。
+        """
+        # 确保 LLM provider 已构建(gateway 强依赖它取模型)
+        from app.services.llm import llm as llm_svc
+
+        if not llm_svc.providers:
+            await llm_svc.startup()
+
+        # 确保数据源就绪(agent_runs / agent_sessions 写库依赖;连不上则记录功能降级)
+        from app.core.datasource import datasources
+
+        if not datasources.names():
+            await datasources.startup()
+
         discover_global_tools()
         registry.load()
         self._mw_factory = _build_middleware_factory()
