@@ -73,14 +73,22 @@ class SubagentRunner(BaseRunner):
             chat_model = llm_svc._get_model(provider)
             main_tools = [_lc_tool(t) for t in resolve_tools(self.cfg.tools)]
             subs = self._build_subagents()
+            skill_paths = self.cfg.resolved_skill_paths()
+            skills_kw: dict = {}
+            if skill_paths:
+                skills_kw["skills"] = skill_paths
             self._agent = create_deep_agent(
                 model=chat_model,
                 tools=main_tools,
                 system_prompt=self.cfg.system_prompt
                 or "You are a coordinator. Delegate subtasks to subagents as needed.",
                 subagents=subs,
+                **skills_kw,
             )
-            log.info("subagent runner 已构建(主 agent + %d 子 agent)", len(subs))
+            log.info(
+                "subagent runner 已构建(主 agent + %d 子 agent, skills=%d)",
+                len(subs), len(skill_paths),
+            )
         return self._agent
 
     async def run(self, ctx: AgentRunContext, run_member) -> AgentResult:

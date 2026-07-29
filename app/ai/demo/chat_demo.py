@@ -31,11 +31,15 @@ async def run_dialog(backend: str, agent: str) -> None:
 
 
 async def main() -> None:
-    for backend, agent in PAIR:
-        try:
-            await run_dialog(backend, agent)
-        except Exception as e:
-            print(f"\n=== [{backend}] {agent} 失败: {e}")
+    await agent_gateway.startup()
+    try:
+        for backend, agent in PAIR:
+            try:
+                await run_dialog(backend, agent)
+            except Exception as e:
+                print(f"\n=== [{backend}] {agent} 失败: {e}")
+    finally:
+        await agent_gateway.shutdown()
 
 
 if __name__ == "__main__":

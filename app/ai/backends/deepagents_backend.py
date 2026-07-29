@@ -110,12 +110,21 @@ class DeepAgentsBackend(BaseBackend):
 
             chat_model = self._get_chat_model()
             tools = [_to_lc_tool(t) for t in resolve_tools(self.cfg.tools)]
+            skill_paths = self.cfg.resolved_skill_paths()
+            # skills 是含 SKILL.md 的目录路径列表;deepagents 自动扫描加载
+            skills_kw: dict[str, Any] = {}
+            if skill_paths:
+                skills_kw["skills"] = skill_paths
             self._agent = create_deep_agent(
                 model=chat_model,
                 tools=tools,
                 system_prompt=self.cfg.system_prompt or "You are a helpful assistant.",
+                **skills_kw,
             )
-            log.info("deepagents agent 已构建(tools=%d)", len(tools))
+            log.info(
+                "deepagents agent 已构建(tools=%d, skills=%d)",
+                len(tools), len(skill_paths),
+            )
         return self._agent
 
     async def invoke(self, ctx) -> AgentResult:

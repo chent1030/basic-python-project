@@ -61,6 +61,14 @@ class AgentConfig(BaseModel):
     max_tokens: int | None = None
     recursion_limit: int = 25  # 执行步数上限
 
+    # skill 目录路径列表(每个目录含 SKILL.md,遵循 Agent Skills 规范)
+    # skill 是「教 agent 方法论的指令文档」,比 tool 更高层:
+    # tool 是可执行函数,skill 是指导 agent 如何用 tool/完成任务的说明书。
+    # 路径相对项目根,如 ["skills/code_review"]。
+    # deepagents:传给 create_deep_agent(skills=[...])
+    # agentscope:用 LocalSkillLoader(directory=...) 加入 Toolkit
+    skills: list[str] = Field(default_factory=list)
+
     # 拓扑:子 agent(deepagents)
     subagents: list[str] = Field(default_factory=list)
     # 拓扑:成员 agent(parallel/sequential/conversational)
@@ -76,6 +84,25 @@ class AgentConfig(BaseModel):
 
     # 该 agent 的目录路径(运行时填充,供加载专属 tools.py)
     dir: str = ""
+
+    def resolved_skill_paths(self) -> list[str]:
+        """把 config 里的 skill 相对路径解析成绝对路径(相对项目根)。
+
+        skill 路径在 config.yml 里写成相对项目根(如 "skills/code_review"),
+        这里转成绝对路径供 deepagents/agentscope 加载。
+        不存在的路径会被跳过(记 warning 由调用方处理)。
+        """
+        if not self.skills:
+            return []
+        # 项目根:本文件 app/ai/config.py -> parents[2]
+        root = Path(__file__).resolve().parents[2]
+        out: list[str] = []
+        for s in self.skills:
+            p = Path(s)
+            if not p.is_absolute():
+                p = root / p
+            out.append(str(p))
+        return out
 
     @classmethod
     def from_yaml_file(cls, path: Path) -> AgentConfig:

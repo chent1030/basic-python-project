@@ -110,14 +110,24 @@ class AgentScopeBackend(BaseBackend):
 
             model = self._build_model()
             tool_defs = resolve_tools(self.cfg.tools)
-            # agentscope Toolkit 接受 ToolBase 列表;用 register_tool 包裹
+            skill_paths = self.cfg.resolved_skill_paths()
+            # agentscope Toolkit 同时接受 tools(可执行函数)和 skills_or_loaders(SKILL.md)
             toolkit = None
-            if tool_defs:
+            if tool_defs or skill_paths:
                 try:
-                    tools = [_to_agentscope_tool(t) for t in tool_defs]
-                    toolkit = Toolkit(tools=tools)  # type: ignore[arg-type]
+                    tk_kwargs: dict[str, Any] = {}
+                    if tool_defs:
+                        tk_kwargs["tools"] = [_to_agentscope_tool(t) for t in tool_defs]
+                    if skill_paths:
+                        from agentscope.skill import LocalSkillLoader
+
+                        tk_kwargs["skills_or_loaders"] = [
+                            LocalSkillLoader(directory=p, scan_subdir=True)
+                            for p in skill_paths
+                        ]
+                    toolkit = Toolkit(**tk_kwargs)
                 except Exception:
-                    log.exception("构建 agentscope Toolkit 失败,该 agent 将无工具")
+                    log.exception("构建 agentscope Toolkit 失败,该 agent 将无工具/skill")
                     toolkit = None
             self._agent = Agent(
                 name=self.cfg.backend + "_agent",
@@ -125,7 +135,10 @@ class AgentScopeBackend(BaseBackend):
                 model=model,
                 toolkit=toolkit,
             )
-            log.info("agentscope agent 已构建(tools=%d)", len(tool_defs))
+            log.info(
+                "agentscope agent 已构建(tools=%d, skills=%d)",
+                len(tool_defs), len(skill_paths),
+            )
         return self._agent
 
     async def invoke(self, ctx) -> AgentResult:

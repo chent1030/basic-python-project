@@ -23,15 +23,19 @@ PAIR = [
 
 
 async def main() -> None:
-    for backend, agent in PAIR:
-        print(f"\n=== [{backend}] {agent} ===")
-        try:
-            result = await agent_gateway.trigger(agent, "记住:用户偏好中文回答", source="api")
-            print("输出:", result.output[:200])
-            print("memory_sources:", result.extra.get("memory_sources"))
-            print("tracing:", result.extra.get("tracing"))
-        except Exception as e:
-            print(f"失败: {e}")
+    await agent_gateway.startup()
+    try:
+        for backend, agent in PAIR:
+            print(f"\n=== [{backend}] {agent} ===")
+            try:
+                result = await agent_gateway.trigger(agent, "记住:用户偏好中文回答", source="api")
+                print("输出:", result.output[:200])
+                print("memory_sources:", result.extra.get("memory_sources"))
+                print("tracing:", result.extra.get("tracing"))
+            except Exception as e:
+                print(f"失败: {e}")
+    finally:
+        await agent_gateway.shutdown()
 
 
 if __name__ == "__main__":

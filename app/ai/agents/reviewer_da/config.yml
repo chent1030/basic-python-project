@@ -1,0 +1,17 @@
+# 代码评审员(deepagents 版) —— 演示 skill 集成
+# skill 是「教 agent 方法论的指令文档」,比 tool 更高层:
+# tool 是可执行函数,skill 是 SKILL.md 指导 agent 如何完成任务
+# 这里挂载 code_review skill(教 agent 如何做结构化代码评审)
+topology: single
+backend: deepagents
+provider: ""
+mode: trigger
+system_prompt: |
+  你是一名代码评审助手。
+  重要:回答前先用 skill viewer 工具查看 code_review skill 的完整说明,严格按照其中的方法论和输出格式评审代码。
+skills:
+  - skills/code_review        # 相对项目根的目录路径(含 SKILL.md)
+tools: []
+recursion_limit: 50
+middleware:
+  - name: tracing

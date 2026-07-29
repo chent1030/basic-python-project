@@ -31,13 +31,17 @@ async def run_one(backend: str, agent: str, message: str) -> None:
 
 
 async def main() -> None:
-    message = "用 200 字介绍 LangChain 的核心概念"
-    print(f"任务: {message}")
-    for backend, agent in PAIR:
-        try:
-            await run_one(backend, agent, message)
-        except Exception as e:
-            print(f"\n=== [{backend}] {agent} 失败: {e}")
+    await agent_gateway.startup()  # 加载 registry + llm + 数据源(必须先调)
+    try:
+        message = "用 200 字介绍 LangChain 的核心概念"
+        print(f"任务: {message}")
+        for backend, agent in PAIR:
+            try:
+                await run_one(backend, agent, message)
+            except Exception as e:
+                print(f"\n=== [{backend}] {agent} 失败: {e}")
+    finally:
+        await agent_gateway.shutdown()
 
 
 if __name__ == "__main__":

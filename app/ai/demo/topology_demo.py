@@ -48,11 +48,15 @@ async def run_one(backend: str, agent: str, message: str) -> None:
 
 
 async def main() -> None:
-    for topology, da, as_, message in DEMOS:
-        print(f"\n=== [{topology}] 输入: {message} ===")
-        await run_one("deepagents", da, message)
-        if da != as_:  # router 共用,不重复
-            await run_one("agentscope", as_, message)
+    await agent_gateway.startup()
+    try:
+        for topology, da, as_, message in DEMOS:
+            print(f"\n=== [{topology}] 输入: {message} ===")
+            await run_one("deepagents", da, message)
+            if da != as_:  # router 共用,不重复
+                await run_one("agentscope", as_, message)
+    finally:
+        await agent_gateway.shutdown()
 
 
 if __name__ == "__main__":
