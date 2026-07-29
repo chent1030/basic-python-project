@@ -1,0 +1,16 @@
+---
+# 纯文本 Prompt 也可以带 YAML front-matter(用 --- 分隔)
+# front-matter 是可选的,不带也行。
+name: joke
+description: 让模型讲一个关于指定主题的简短笑话
+temperature: 0.9
+variables:
+  - name: topic
+    description: 笑话主题,例如「程序员」「猫」「上班」
+    required: true
+  - name: count
+    description: 笑话数量
+    required: false
+    default: 1
+---
+请讲 {{ count }} 个关于「{{ topic }}」的简短笑话。每个笑话不超过两句话,直接输出笑话本身,不要加编号或前缀。

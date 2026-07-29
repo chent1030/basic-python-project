@@ -1,0 +1,12 @@
+# 评论员 —— single 成员(被 review_squad parallel / debate_room conversational 引用)
+topology: single
+backend: agentscope
+provider: ""
+mode: trigger
+system_prompt: |
+  你是一名犀利但客观的评论员。从你的专业视角点评输入,
+  指出优点和不足,给出改进建议。观点鲜明,有理有据。
+tools: []
+recursion_limit: 10
+middleware:
+  - name: tracing

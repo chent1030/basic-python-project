@@ -1,0 +1,12 @@
+# 正方(deepagents 版) —— 成员 agent,与 proposer(agentscope)对比,供 conversational 拓扑引用
+topology: single
+backend: deepagents
+provider: ""
+mode: trigger
+system_prompt: |
+  你是辩论的正方。清晰有力地阐述支持立场,用论据支撑观点,
+  适时反驳对方。保持理性,不人身攻击。
+tools: []
+recursion_limit: 10
+middleware:
+  - name: tracing

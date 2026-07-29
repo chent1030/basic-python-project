@@ -1,0 +1,10 @@
+# 辩论室 —— conversational 拓扑(多 agent 群聊讨论)
+# 正方 + 反方轮流发言,3 轮交锋(agentscope MsgHub 思路)
+topology: conversational
+mode: trigger
+members:
+  - proposer
+  - opponent
+rounds: 3                # 发言轮数
+middleware:
+  - name: tracing

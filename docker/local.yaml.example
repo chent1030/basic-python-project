@@ -1,0 +1,74 @@
+# =============================================================================
+# 容器内运行时的配置覆盖示例
+# 用法:
+#   cp docker/local.yaml.example config/local.yaml
+#   # 在宿主机生成加密密码填入,然后:
+#   docker compose up -d
+#
+# 容器内 app 通过 docker network 解析服务名,所以 host 用服务名
+# (postgres / mysql / redis),而不是 127.0.0.1。
+# =============================================================================
+
+crypto:
+  # 用 `python -m app.core.crypto genkey` 生成后填入
+  key: "REPLACE_WITH_GENERATED_KEY"
+
+app:
+  debug: false
+  env: prod
+
+auth:
+  enabled: false
+  secret_key: "replace-with-a-long-random-secret-at-least-32-bytes-long"
+
+datasources:
+  postgres_primary:
+    type: postgresql
+    host: postgres                  # docker-compose 服务名
+    port: 5432
+    username: postgres
+    password: "enc:REPLACE_WITH_ENCRYPTED_PASSWORD"
+    database: app
+    pool_size: 10
+    max_overflow: 20
+
+  postgres_readonly:
+    type: postgresql
+    host: postgres
+    port: 5432
+    username: postgres
+    password: "enc:REPLACE_WITH_ENCRYPTED_PASSWORD"
+    database: app
+
+  mysql_business:
+    type: mysql
+    host: mysql
+    port: 3306
+    username: root
+    password: "enc:REPLACE_WITH_ENCRYPTED_PASSWORD"
+    database: business
+    pool_size: 10
+
+  redis_cache:
+    type: redis
+    host: redis
+    port: 6379
+    database: "0"
+    max_connections: 20
+
+llm:
+  default_provider: deepseek
+  providers:
+    deepseek:
+      base_url: "https://api.deepseek.com/v1"
+      api_key: "enc:REPLACE_WITH_ENCRYPTED_API_KEY"
+      model: "deepseek-chat"
+    qwen:
+      base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+      api_key: "enc:REPLACE_WITH_ENCRYPTED_API_KEY"
+      model: "qwen-plus"
+
+http:
+  timeout: 30.0
+  default_headers:
+    User-Agent: "fastapi-demo/0.1"

@@ -1,0 +1,131 @@
+# 本地覆盖配置示例 — 复制为 config/local.yaml 后填入真实密钥。
+# 加载规则(无环境变量):config.yaml 始终加载;若 local.yaml 存在则深合并覆盖。
+# local.yaml 已被 .gitignore 忽略。
+
+# ── 密码加密 key(AES-256-GCM)──────────────────────────────────────
+# 用 `python -m app.core.crypto genkey` 生成,把输出粘贴到这里。
+# 之后所有 `enc:` 前缀字段(下面数据库密码、API key)都会用它解密。
+crypto:
+  key: "REPLACE_WITH_GENERATED_KEY"
+
+app:
+  debug: true
+
+auth:
+  enabled: false
+  secret_key: "your-local-secret-at-least-32-bytes-long"
+
+# ── 数据源:分段配置 + 密码加密 ─────────────────────────────────────
+# password 字段两种填法:
+#   加密:  password: "enc:gKR8Y2..."    (推荐生产用)
+#   明文:  password: "postgres"          (本地开发方便)
+datasources:
+  # PostgreSQL 主库
+  postgres_primary:
+    type: postgresql
+    host: 127.0.0.1
+    port: 5432
+    username: postgres
+    password: "enc:REPLACE_WITH_ENCRYPTED_PASSWORD"   # 用 crypto encrypt 生成
+    database: app
+    pool_size: 10
+    max_overflow: 20
+    pool_timeout: 30
+    pool_recycle: 1800
+    pool_pre_ping: true
+    connect_timeout: 10
+    statement_timeout: 30000       # PG 语句级超时(毫秒)
+
+  # PostgreSQL 只读副本(可选)
+  postgres_readonly:
+    type: postgresql
+    host: 127.0.0.1
+    port: 5432
+    username: postgres
+    password: "enc:REPLACE_WITH_ENCRYPTED_PASSWORD"
+    database: app_ro
+    pool_size: 5
+    max_overflow: 10
+
+  # MySQL
+  mysql_business:
+    type: mysql
+    host: 127.0.0.1
+    port: 3306
+    username: root
+    password: "enc:REPLACE_WITH_ENCRYPTED_PASSWORD"
+    database: business
+    pool_size: 10
+    max_overflow: 20
+    pool_recycle: 1800
+
+  # Redis
+  redis_cache:
+    type: redis
+    host: 127.0.0.1
+    port: 6379
+    # Redis 有密码时填 username 留空、password 写密码:
+    # username: ""
+    # password: "enc:REPLACE_WITH_ENCRYPTED_PASSWORD"
+    database: "0"                  # Redis db 号(字符串)
+    max_connections: 20
+    socket_timeout: 5
+    socket_connect_timeout: 5
+    health_check_interval: 30
+
+llm:
+  default_provider: deepseek              # 不传 provider 时用这个
+  providers:
+    # ── DeepSeek(便宜,推理强)──────────────────────────────────
+    deepseek:
+      base_url: "https://api.deepseek.com/v1"
+      api_key: "enc:REPLACE_WITH_ENCRYPTED_API_KEY"   # 用 crypto encrypt 生成
+      model: "deepseek-chat"
+      temperature: 0.7
+      timeout: 60
+
+    # ── 通义千问 Qwen ────────────────────────────────────────────
+    qwen:
+      base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+      api_key: "enc:REPLACE_WITH_ENCRYPTED_API_KEY"
+      model: "qwen-plus"
+      temperature: 0.7
+
+    # ── 智谱 GLM ─────────────────────────────────────────────────
+    glm:
+      base_url: "https://open.bigmodel.cn/api/paas/v4"
+      api_key: "enc:REPLACE_WITH_ENCRYPTED_API_KEY"
+      model: "glm-4"
+
+    # ── 真 OpenAI(走 NewAPI 转发)──────────────────────────────
+    openai:
+      base_url: "https://api.openai.com/v1"
+      api_key: "enc:REPLACE_WITH_ENCRYPTED_API_KEY"
+      model: "gpt-4o-mini"
+
+# ── AI Agent 框架 ──────────────────────────────────────────────────
+# agent 列表去中心化:每个 agent 在 app/ai/agents/<name>/config.yml 里声明。
+# 本处只覆盖全局设置 + 中间件后端(持久记忆向量库 / 外部记忆 API)。
+# 不配也能跑 —— 只是 persistent_memory / external_memory 中间件会退化为 no-op。
+agents:
+  enabled: true
+  session_datasource: "postgres_primary"   # 会话记忆 + 运行记录存这里
+
+  # 持久记忆 —— 独立向量库(与业务库隔离,需先在该库建 pgvector 扩展:
+  #   CREATE EXTENSION IF NOT EXISTS vector;)
+  # 先在 datasources 下配一个独立 PG(如 postgres_vector),再在这里指向它。
+  persistent_memory:
+    enabled: false                          # 改 true 启用
+    datasource: "postgres_vector"           # 独立向量库数据源名
+    embedding_provider: "openai"            # 用哪个 llm.provider 出 embedding
+    embedding_model: "text-embedding-3-small"
+    top_k: 5
+
+  # 外部记忆 —— 外部知识 API(中间件调用前 POST query,取回知识注入上下文)
+  external_memory:
+    enabled: false
+    url: "https://your-knowledge-api.example.com/search"
+    method: "POST"
+    headers:
+      Authorization: "Bearer YOUR_TOKEN"
+    timeout: 30.0

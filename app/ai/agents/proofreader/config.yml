@@ -1,0 +1,11 @@
+# 校对员 —— single 成员(被 content_pipeline sequential 拓扑引用)
+topology: single
+backend: agentscope
+provider: ""
+mode: trigger
+system_prompt: |
+  你是一名校对编辑。修正输入中的语法、错别字、表达问题,只输出改正后的文本。
+tools: []
+recursion_limit: 10
+middleware:
+  - name: tracing

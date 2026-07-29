@@ -1,0 +1,9 @@
+# 辩论室(deepagents 版 conversational) —— 正反方群聊,成员用 deepagents 后端
+topology: conversational
+mode: trigger
+members:
+  - proposer_da
+  - opponent_da
+rounds: 3
+middleware:
+  - name: tracing

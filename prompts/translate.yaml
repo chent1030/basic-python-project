@@ -1,0 +1,35 @@
+# 结构化 Prompt — 翻译助手
+# 文件名 translate.yaml -> load_prompt("translate")
+# 使用: render_prompt("translate", source="Hello", target_lang="中文")
+
+name: translate
+description: |
+  将给定文本翻译成目标语言。适合做产品国际化、用户消息本地化。
+
+# 系统提示词 (可使用 {{ var }} 或 {var} 占位符)
+system: |
+  你是一名专业翻译。请遵守以下规则:
+  1. 只输出译文,不要任何解释或额外文字
+  2. 保持原文的语气与正式程度
+  3. 目标语言: {{ target_lang }}
+
+# 用户提示词
+user: |
+  请把下面的内容翻译为 {{ target_lang }}:
+
+  {{ source }}
+
+# LLM 调用参数(可选,缺省则用全局配置)
+temperature: 0.3      # 翻译需要确定性 -> 低 temperature
+model: null           # null 表示用 config.yaml 里的 llm.model
+max_tokens: 2048
+
+# 变量声明 — 用于校验、文档与 IDE 提示
+variables:
+  - name: source
+    description: 要翻译的原文
+    required: true
+  - name: target_lang
+    description: 目标语言,例如「中文」「English」「日本語」
+    required: true
+    default: 中文

@@ -1,0 +1,22 @@
+{# Jinja2 模板 Prompt — 文件名 summarize.j2 -> load_prompt("summarize") #}
+---
+name: summarize
+description: 用要点方式总结一段长文本
+temperature: 0.2
+variables:
+  - name: text
+    description: 待总结的长文本
+    required: true
+  - name: max_points
+    description: 最多保留几个要点
+    required: false
+    default: 5
+  - name: lang
+    description: 输出语言
+    required: false
+    default: 中文
+---
+请把下面的内容总结为{% if max_points %}不超过 {{ max_points }} 条{% endif %}的要点,
+使用 {{ lang }} 输出,每条要点一行,以「- 」开头:
+
+{{ text }}

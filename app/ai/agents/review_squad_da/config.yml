@@ -1,0 +1,10 @@
+# 评审小组(deepagents 版 parallel) —— 三评论员并行评审,成员用 deepagents 后端
+topology: parallel
+mode: trigger
+members:
+  - critic_da
+  - critic_da
+  - critic_da
+aggregator: merge
+middleware:
+  - name: tracing

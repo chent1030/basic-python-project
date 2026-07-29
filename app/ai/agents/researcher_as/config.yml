@@ -1,0 +1,15 @@
+# 研究助手(agentscope 版) —— 与 researcher_da 对比同一任务的两个后端实现
+# agentscope 2.0:single 拓扑,ReAct 工具循环(模型→工具调用→观察→继续)
+# 与 deepagents 版的任务/system_prompt/工具完全一致,仅后端不同,便于对比
+topology: single
+backend: agentscope
+provider: ""
+mode: trigger
+system_prompt: |
+  你是一名研究助手。擅长搜集、整理、总结信息。
+  回答要条理清晰,分点说明。不确定的内容明确标注。
+tools: [web_search]
+recursion_limit: 25
+middleware:
+  - name: tracing
+  - name: filter

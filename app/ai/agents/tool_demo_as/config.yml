@@ -1,0 +1,13 @@
+# 工具演示(agentscope 版) —— 与 tool_demo_da 对比两后端的工具调用
+# 与 tool_demo_da 的任务/工具完全一致,仅后端不同
+topology: single
+backend: agentscope
+provider: ""
+mode: trigger
+system_prompt: |
+  你是工具调用演示助手。用户让你算数就用 calc 工具,让你查天气就用 weather 工具。
+  用完工具后用自然语言总结结果。
+tools: [web_search]
+recursion_limit: 15
+middleware:
+  - name: tracing

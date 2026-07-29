@@ -1,0 +1,53 @@
+# 版本控制
+.git/
+.gitignore
+.gitattributes
+
+# Python 缓存与构建产物
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+
+# 虚拟环境(本地装过 .venv 不要进镜像)
+.venv/
+venv/
+env/
+.python-version
+
+# 测试 / 工具缓存(镜像里不要 dev 依赖与测试代码)
+tests/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# 编辑器/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 本地配置与密钥(只提交 .example,真实 local.yaml 通过卷挂载)
+config/local.yaml
+config/*.local.yaml
+*.local.yaml
+
+# 日志
+logs/
+*.log
+
+# Docker 自身(避免循环 COPY)
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# 系统/杂项
+.DS_Store
+Thumbs.db

@@ -1,0 +1,20 @@
+# 中间件演示(deepagents 版) —— 与 middleware_demo_as 对比四类记忆在两后端的挂载
+# 挂全部四类记忆中间件 + tracing + filter:
+#   context_memory(上下文,交后端原生)、session_memory(会话,业务库)、
+#   persistent_memory(持久,向量库,未配则 no-op)、external_memory(外部 API,未配则 no-op)
+topology: single
+backend: deepagents
+provider: ""
+mode: trigger
+system_prompt: |
+  你是中间件演示助手。会用到记忆/过滤等中间件能力。
+  回答时如注入了记忆或外部知识,请说明你参考了它们。
+tools: []
+recursion_limit: 15
+middleware:
+  - name: tracing
+  - name: context_memory       # 上下文记忆:交 deepagents checkpointer(本框架透传)
+  - name: session_memory       # 会话记忆:agent_sessions 表(本 agent trigger 模式无 session,no-op)
+  - name: persistent_memory    # 持久记忆:向量库(未配则 no-op)
+  - name: external_memory      # 外部记忆:API(未配则 no-op)
+  - name: filter

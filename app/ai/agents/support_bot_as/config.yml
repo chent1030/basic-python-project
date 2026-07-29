@@ -1,0 +1,16 @@
+# 客服助手(agentscope 版) —— 持续对话,与 support_bot_da 对比两后端
+# chat 模式:session_memory 中间件自动 load 历史 + append 本轮
+# agentscope 的上下文记忆交给 agent 内置 memory;框架层用 session_memory 统一拼历史
+topology: single
+backend: agentscope
+provider: ""
+mode: chat
+system_prompt: |
+  你是一名耐心的客服助手。语气友好专业,回答简洁。
+  不知道就说不知道,不要编造。可调用查订单工具。
+tools: [query_order]
+recursion_limit: 20
+middleware:
+  - name: tracing
+  - name: session_memory
+  - name: filter

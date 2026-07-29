@@ -1,0 +1,19 @@
+# 研究小组(deepagents 版 subagent) —— 主 agent 委派子任务(deepagents 原生)
+# 主 agent 通过 task 工具把子任务委派给隔离上下文的子 agent
+# 这是 deepagents 的强项:原生 subagent 委派 + context quarantine
+topology: subagent
+backend: deepagents
+provider: ""
+mode: trigger
+system_prompt: |
+  你是研究小组协调者。收到研究任务后:
+  1. 把「信息搜集」委派给 researcher_da 子 agent
+  2. 把「文字成稿」委派给 writer_da 子 agent
+  最后汇总成报告。
+subagents:
+  - researcher_da
+  - writer_da
+recursion_limit: 30
+middleware:
+  - name: tracing
+  - name: filter

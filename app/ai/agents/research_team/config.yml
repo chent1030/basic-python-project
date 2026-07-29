@@ -1,0 +1,18 @@
+# 研究小组 —— subagent 拓扑(deepagents 原生子 agent 委派)
+# 主 agent 把研究/写作子任务委派给隔离上下文的子 agent(researcher + writer)
+topology: subagent
+backend: deepagents
+provider: ""
+mode: trigger
+system_prompt: |
+  你是一个研究小组的协调者。收到研究任务后:
+  1. 把「信息搜集整理」委派给 researcher 子 agent
+  2. 把「文字成稿」委派给 writer 子 agent
+  最后汇总成完整报告。
+subagents:
+  - researcher
+  - writer
+recursion_limit: 30
+middleware:
+  - name: tracing
+  - name: filter

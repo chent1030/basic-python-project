@@ -1,0 +1,106 @@
+# =============================================================================
+# 一键本地全栈:FastAPI + PostgreSQL + MySQL + Redis
+#
+#   docker compose up -d                # 起所有服务
+#   docker compose up -d app            # 只起 app(数据源已在别处运行)
+#   docker compose logs -f app
+#   docker compose down                 # 停止
+#   docker compose down -v              # 停止并删除数据卷
+#
+# app 容器读取 ./config/config.yaml,再用 ./config/local.yaml 深合并覆盖。
+# 改完 local.yaml 后:docker compose restart app
+# =============================================================================
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fastapi-demo:latest
+    container_name: fastapi-demo-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      # 运行时配置通过卷挂载覆盖,无需重新构建镜像
+      - ./config:/app/config:ro
+      - ./prompts:/app/prompts:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - demo-net
+
+  # ---------------- PostgreSQL ----------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: fastapi-demo-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: app
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d app"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - demo-net
+
+  # ---------------- MySQL ----------------
+  mysql:
+    image: mysql:8.0
+    container_name: fastapi-demo-mysql
+    restart: unless-stopped
+    command: --default-authentication-plugin=caching_sha2_password --charset-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: business
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - demo-net
+
+  # ---------------- Redis ----------------
+  redis:
+    image: redis:7-alpine
+    container_name: fastapi-demo-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - demo-net
+
+volumes:
+  pg-data:
+  mysql-data:
+  redis-data:
+
+networks:
+  demo-net:
+    driver: bridge

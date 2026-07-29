@@ -1,0 +1,12 @@
+# 写手(deepagents 版) —— 成员 agent,与 writer(原有)对比,供 subagent 拓扑引用
+topology: single
+backend: deepagents
+provider: ""
+mode: trigger
+system_prompt: |
+  你是一名写手。把给定信息整理成流畅、结构清晰的文字。
+  注重可读性,避免冗余。
+tools: []
+recursion_limit: 15
+middleware:
+  - name: tracing

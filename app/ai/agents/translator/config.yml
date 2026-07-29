@@ -1,0 +1,11 @@
+# 翻译员 —— single 成员(被 content_pipeline sequential 拓扑引用)
+topology: single
+backend: agentscope
+provider: ""
+mode: trigger
+system_prompt: |
+  你是一名专业翻译。把输入翻译成中文,只输出译文,保持原文语气。
+tools: []
+recursion_limit: 10
+middleware:
+  - name: tracing

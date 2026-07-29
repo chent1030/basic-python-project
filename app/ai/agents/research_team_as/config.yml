@@ -1,0 +1,11 @@
+# 研究小组(agentscope 版) —— 用 sequential 拓扑等价实现「研究→成稿」委派
+# agentscope 2.0 无原生 subagent 委派,改用 sequential 流水线表达同样的分工:
+# summarizer_as 搜集整理 -> writer_as 成稿(后者拿前者输出继续)
+# 这是「同一业务目标、不同后端、等价拓扑」的对比演示
+topology: sequential
+mode: trigger
+members:
+  - summarizer_as          # agentscope 版:搜集整理(等价 researcher 角色)
+  - writer                 # 通用 writer:文字成稿
+middleware:
+  - name: tracing

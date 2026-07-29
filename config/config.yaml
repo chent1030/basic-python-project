@@ -1,0 +1,206 @@
+# =====================================================================
+# 全局默认配置 — 请勿提交敏感信息,敏感项请放入 config/local.yaml
+# =====================================================================
+# 加载规则(无任何环境变量):
+#   1. 始终加载本文件 config/config.yaml
+#   2. 如果 config/local.yaml 存在,自动深合并覆盖(逐字段覆盖)
+# 本地开发 / 生产:放(或不放、放不同内容的)config/local.yaml 即可。
+# 所有配置文件均为 YAML,不使用 .env。
+
+app:
+  name: "fastapi-demo"
+  env: "dev"           # dev / staging / prod
+  debug: true
+  host: "0.0.0.0"
+  port: 8000
+  api_prefix: "/api/v1"
+
+# ---------------------------------------------------------------------
+# 认证:默认关闭。需要认证的接口加 `@require_auth` 注解即可开启。
+# ---------------------------------------------------------------------
+auth:
+  enabled: false                # 全局开关(默认关闭)
+  algorithm: "HS256"
+  secret_key: "change-me-in-local.yaml"
+  access_token_expire_minutes: 60
+  refresh_token_expire_days: 7
+
+# ---------------------------------------------------------------------
+# 密码加密(AES-256-GCM)
+#   config.yaml 里所有 `enc:` 前缀字段会用此 key 解密。
+#   生成新 key:python -m app.core.crypto genkey
+#   加密密码:python -m app.core.crypto encrypt "你的明文密码"
+#   留空 = 不启用加密(所有字段按明文处理)
+# ---------------------------------------------------------------------
+crypto:
+  key: ""                      # base64 编码的 32 字节 key,用 genkey 生成后填入
+
+# ---------------------------------------------------------------------
+# 多数据源配置:任意数量、任意类型。
+# type: postgresql | mysql | redis
+#
+# 默认留空 —— 不配任何数据源也能正常启动(只会跳过 DB 相关功能)。
+# 把数据源放到 config/local.yaml 里(参考 local.yaml.example)。
+#
+# 两种配置方式:
+#   1) 分段配置(推荐,密码可加密):
+#        postgres_primary:
+#          type: postgresql
+#          host: 127.0.0.1
+#          port: 5432
+#          username: postgres
+#          password: "enc:gKR8Y2..."   # enc: = 密文;无前缀 = 明文
+#          database: app
+#   2) 整串 DSN(简单):
+#        postgres_primary:
+#          type: postgresql
+#          dsn: "postgresql+asyncpg://user:pass@host:5432/db"
+#
+# 池/超时参数对照 Spring Boot HikariCP:
+#   pool_size + max_overflow ≈ maximumPoolSize
+#   pool_timeout ≈ connectionTimeout  pool_recycle ≈ maxLifetime
+#   pool_pre_ping ≈ connectionTestQuery
+#   statement_timeout 仅 PostgreSQL(毫秒)
+# ---------------------------------------------------------------------
+datasources: {}                # 默认空;在 config/local.yaml 里配置真实数据源
+
+# ---------------------------------------------------------------------
+# LLM —— 多 provider(多个 NewAPI 地址),调用时按 provider 参数切换
+# 通过 LangChain ChatOpenAI 连接,兼容 DeepSeek/Qwen/GLM/Kimi 等。
+# 只发送国产模型都支持的最小参数集。NewAPI 会拒绝 OpenAI 专属参数。
+#
+# 不传 provider 时用 default_provider。api_key 支持 enc: 加密。
+# ---------------------------------------------------------------------
+llm:
+  default_provider: ""                     # 默认 provider 名(对应 providers 下的 key)
+  providers: {}                            # 在 config/local.yaml 配置真实 provider
+  # providers 示例(放进 local.yaml):
+  #   deepseek:
+  #     base_url: "https://api.deepseek.com/v1"
+  #     api_key: "enc:xxx"
+  #     model: "deepseek-chat"
+  #   qwen:
+  #     base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  #     api_key: "sk-xxx"
+  #     model: "qwen-plus"
+
+# ---------------------------------------------------------------------
+# HTTP 客户端默认值 (供 app/services/http_client.py 使用)
+# 每次调用时传 kwargs 都能覆盖这里的值。
+# ---------------------------------------------------------------------
+http:
+  timeout: 30.0
+  max_connections: 100
+  max_keepalive_connections: 20
+  verify: true
+  default_headers:
+    User-Agent: "fastapi-demo/0.1"
+    Accept: "application/json"
+
+# ---------------------------------------------------------------------
+# Prompt 系统:提示词文件存放在项目根目录的 prompts/ 下
+# 支持三种格式:
+#   - .yaml / .yml  结构化(可同时定义 system / user / metadata / variables)
+#   - .txt          纯文本(只作为 user prompt)
+#   - .j2/.jinja2   Jinja2 模板,与上述三种可自由组合
+# ---------------------------------------------------------------------
+prompts:
+  dir: "prompts"
+  default_format: "yaml"
+  cache: true
+
+# ---------------------------------------------------------------------
+# 日志 — Spring Boot 风格 + 按天滚动归档
+#   format:        console(彩色)| json(单行 JSON 给 ELK/Loki)
+#   color:         console 模式是否彩色
+#   file:          主日志文件路径;null = 只输出到控制台不写文件
+#   rotation:      daily(每天午夜滚动)| hourly | weekly
+#   backup_count:  保留多少天的历史归档(超期自动删除),推荐 30-90
+#   max_file_size: 单文件大小上限(MB);0 = 不按大小滚动
+#
+# 归档效果(类似 Logback RollingFileAppender):
+#   logs/app.log              当前正在写
+#   logs/app.log.2026-07-14   昨天的归档
+#   logs/app.log.2026-07-13   前天的归档
+#   ...超过 backup_count 个的最老文件自动删除
+# ---------------------------------------------------------------------
+logging:
+  level: "INFO"
+  format: "console"          # console | json
+  color: true
+  file: "logs/app.log"       # 主日志文件;改 null 则不写文件
+  rotation: "daily"          # daily | hourly | weekly
+  backup_count: 30           # 保留 30 天历史日志
+  max_file_size: 0           # MB;0 = 只按时间滚动,不按大小
+
+# ---------------------------------------------------------------------
+# 定时任务 —— APScheduler(@scheduled 装饰器,任务写在 app/tasks/ 下)
+# - timezone:            cron 表达式按此时区解释
+# - coalesce:            错过的多次执行合并为一次
+# - max_instances:       同一任务最大并发实例(防重入)
+# - misfire_grace_time:  任务超期多久内仍可执行(秒)
+# ---------------------------------------------------------------------
+scheduler:
+  timezone: "Asia/Shanghai"
+  coalesce: true
+  max_instances: 1
+  misfire_grace_time: 60
+
+# ---------------------------------------------------------------------
+# 数据库迁移(Alembic)
+# - default_datasource: alembic upgrade / autogenerate 默认操作的数据源
+#   临时切换:alembic -x datasource=mysql_business upgrade head
+# ---------------------------------------------------------------------
+alembic:
+  default_datasource: "postgres_primary"
+
+# ---------------------------------------------------------------------
+# AI Agent 框架 —— 集成 deepagents + agentscope,支持 6 种拓扑 + 4 类记忆
+#
+# agent 列表是去中心化的:每个 agent 一个独立目录,在 agents_dir 下:
+#   app/ai/agents/<name>/config.yml   声明拓扑/后端/provider/中间件等
+#   app/ai/agents/<name>/tools.py     (可选)该 agent 专属工具
+# 加/删 agent = 加/删一个目录,无需改本文件。
+#
+# 本配置只放全局开关 + 共享存储位置 + 中间件后端配置。
+# 模型 provider 复用上面的 llm.providers,不重复配置。
+#
+# 拓扑(topology,在每个 agent 的 config.yml 里声明):
+#   single          单 agent(deepagents 或 agentscope)
+#   subagent        主 agent 委派子任务(deepagents subagents + task 工具)
+#   parallel        多 agent 并行跑同输入(agentscope FanoutPipeline)
+#   sequential      流水线,前者输出喂后者(agentscope SequentialPipeline)
+#   conversational  多 agent 群聊讨论(agentscope MsgHub)
+#   router          supervisor 按意图分发(自建)
+#
+# 记忆(4 类,各自独立中间件):
+#   context     上下文记忆 —— 依赖后端原生(deepagents checkpointer / agentscope memory)
+#   session     会话记忆 —— agent_sessions 表(业务库)
+#   persistent  持久记忆 —— 独立向量库(跨会话事实/偏好)
+#   external    外部记忆 —— 外部 API 召回(第一期)
+# ---------------------------------------------------------------------
+agents:
+  enabled: true
+  agents_dir: "app/ai/agents"
+  tools_dir: "app/ai/tools"
+  session_datasource: "postgres_primary"   # 会话记忆存哪个数据源
+  session_table: "agent_sessions"
+  runs_table: "agent_runs"                 # 运行记录表(树状,parent_run_id+depth)
+
+  # 持久记忆 —— 独立向量库(与业务库隔离)
+  # 在 local.yaml 里配真实数据源(独立 PG + pgvector 扩展)
+  persistent_memory:
+    enabled: false                         # 默认关闭;开启后中间件才生效
+    datasource: ""                         # 向量库数据源名(datasources 里的 key)
+    table: "agent_memories"
+    embedding_provider: ""                 # 用哪个 llm.provider 出 embedding
+    embedding_model: ""
+    top_k: 5
+
+  # 外部记忆 —— 外部 API 召回
+  external_memory:
+    enabled: false
+    url: ""
+    method: "POST"
+    headers: {}
+    timeout: 30.0
