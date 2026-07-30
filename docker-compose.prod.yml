@@ -29,7 +29,7 @@ services:
     container_name: fastapi-demo-app
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-8000}:8000"
+      - "${APP_PORT:-18555}:18555"
     environment:
       TZ: Asia/Shanghai
     volumes:

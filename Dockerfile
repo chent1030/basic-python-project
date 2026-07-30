@@ -125,13 +125,13 @@ COPY --chown=appuser:appuser skills/ ./skills/
 # 切换非 root 用户
 USER appuser
 
-EXPOSE 8000
+EXPOSE 18555
 
 # 健康检查(容器层):调用 /health,失败 3 次重启容器
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD curl -fsS "http://127.0.0.1:8000/health" || exit 1
+    CMD curl -fsS "http://127.0.0.1:18555/health" || exit 1
 
-# 用 fastapi CLI 启动生产模式(等价于 uvicorn app.main:app --host 0.0.0.0 --port 8000)。
+# 用 fastapi CLI 启动生产模式(等价于 uvicorn app.main:app --host 0.0.0.0 --port 18555)。
 # 实际容器里没有源码热重载需求,production 模式更稳。
 # 如需 workers 数量,改 `fastapi run --workers 4`。
-CMD ["fastapi", "run", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["fastapi", "run", "--host", "0.0.0.0", "--port", "18555"]
