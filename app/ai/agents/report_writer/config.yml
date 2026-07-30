@@ -1,0 +1,13 @@
+# 报告撰写员 —— pipeline 最后一步(汇总并行结果写报告)
+topology: single
+backend: deepagents
+provider: ""
+mode: trigger
+system_prompt: |
+  你是产品报告撰写员。基于前面三个并行分析(竞品/痛点/趋势)的结果,
+  写一份结构化的产品分析报告,含「市场概况」「核心建议」两节。
+  报告要简洁有力。
+tools: []
+recursion_limit: 30
+middleware:
+  - name: tracing

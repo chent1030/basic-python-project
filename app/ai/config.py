@@ -1,11 +1,11 @@
 """单 agent 配置:从 app/ai/agents/<name>/config.yml 加载。
 
 去中心化设计:每个 agent 一个独立目录,内含 config.yml 声明:
-- topology: 拓扑(single/subagent/parallel/sequential/conversational/router)
+- topology: 拓扑(single/subagent/parallel/sequential/conversational/router/pipeline)
 - backend:  后端(deepagents/agentscope);single 之外由 topology 隐含
 - provider: 用哪个 LLM provider(复用 config 的 llm.providers)
 - mode:     trigger(一次性)/ chat(持续对话)
-- tools / subagents / members / routes: 拓扑特定字段
+- tools / subagents / members / routes / steps: 拓扑特定字段
 - middleware: 挂载的中间件(四类记忆 + tracing + filter)
 
 全局开关/存储位置在 app.core.config.AgentsConfig,不在此处。
@@ -18,8 +18,11 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field
 
-# 6 种拓扑
-Topology = Literal["single", "subagent", "parallel", "sequential", "conversational", "router"]
+# 7 种拓扑
+Topology = Literal[
+    "single", "subagent", "parallel", "sequential",
+    "conversational", "router", "pipeline",
+]
 # 后端
 Backend = Literal["deepagents", "agentscope"]
 # 调用模式
@@ -33,6 +36,39 @@ class MiddlewareSpec(BaseModel):
     config: 该中间件的配置(可选,覆盖中间件默认)
     """
 
+    name: str
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class PipelineStep(BaseModel):
+    """pipeline 拓扑的一个步骤(显式声明)。
+
+    支持两种步骤:
+    1) 单 agent 顺序步骤:run = "agent_a"(单个 agent 名)
+    2) 并行步骤:parallel = ["b1", "b2", "b3"](多个 agent 同时跑)
+       并行步骤可选 aggregator:合并方式(见 app/ai/aggregators)
+       - 内置:merge(拼接,默认)/ list(JSON)/ first(取首条)
+       - 自定义:在 agent 目录的 aggregator.py 用 @aggregator 定义,填函数名
+
+    name: 步骤名(可选,用于日志/记录)
+    input_from: 可选,显式指定本步骤输入来自哪个前序步骤的输出(默认用上一步输出)
+
+    示例(A→[B,C,D并行]→E):
+        steps:
+          - name: step_a
+            run: agent_a
+          - name: step_bcd
+            parallel: [b1, b2, b3]
+            aggregator: merge
+          - name: step_e
+            run: agent_e
+    """
+
+    name: str = ""
+    run: str = ""                       # 单 agent 顺序步骤
+    parallel: list[str] = Field(default_factory=list)  # 并行步骤(多个 agent)
+    aggregator: str = "merge"           # 并行步骤的合并方式
+    input_from: str = ""                # 可选:显式指定输入来源步骤名
     name: str
     config: dict[str, Any] = Field(default_factory=dict)
 
@@ -79,6 +115,8 @@ class AgentConfig(BaseModel):
     rounds: int = 3
     # 拓扑:router 路由表(意图 -> agent 名)
     routes: dict[str, str] = Field(default_factory=dict)
+    # 拓扑:pipeline 步骤列表(顺序执行,某步可 parallel 并行)
+    steps: list[PipelineStep] = Field(default_factory=list)
 
     middleware: list[MiddlewareSpec] = Field(default_factory=list)
 

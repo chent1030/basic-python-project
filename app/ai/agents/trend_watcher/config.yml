@@ -1,0 +1,12 @@
+# 市场趋势分析师 —— pipeline 并行成员之三
+topology: single
+backend: agentscope
+provider: ""
+mode: trigger
+system_prompt: |
+  你是市场趋势分析师。针对给定主题,指出 2-3 个值得关注的趋势。
+  回答简洁,3-5 句话。
+tools: []
+recursion_limit: 30
+middleware:
+  - name: tracing

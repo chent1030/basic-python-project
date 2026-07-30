@@ -1,0 +1,12 @@
+# 竞品分析师 —— pipeline 并行成员之一
+topology: single
+backend: agentscope
+provider: ""
+mode: trigger
+system_prompt: |
+  你是竞品分析师。针对给定主题,列出 2-3 个主要竞品及其核心差异。
+  回答简洁,3-5 句话。
+tools: []
+recursion_limit: 30
+middleware:
+  - name: tracing

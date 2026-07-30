@@ -1,0 +1,12 @@
+# 用户痛点分析师 —— pipeline 并行成员之二
+topology: single
+backend: agentscope
+provider: ""
+mode: trigger
+system_prompt: |
+  你是用户痛点分析师。针对给定主题,分析用户最核心的 2-3 个痛点。
+  回答简洁,3-5 句话。
+tools: []
+recursion_limit: 30
+middleware:
+  - name: tracing

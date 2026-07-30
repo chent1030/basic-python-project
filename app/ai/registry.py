@@ -98,7 +98,7 @@ class AgentRegistry:
         if is_abs or not sane:
             return
         for name in list(self._configs):
-            for sub in ("tools", "agent"):
+            for sub in ("tools", "agent", "aggregator"):
                 mod_name = f"{pkg_base}.{name}.{sub}"
                 try:
                     importlib.import_module(mod_name)

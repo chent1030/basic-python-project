@@ -35,9 +35,13 @@ def pick_runner(topology: str) -> type[BaseRunner]:
         from app.ai.runners.router import RouterRunner
 
         return RouterRunner
+    if topology == "pipeline":
+        from app.ai.runners.pipeline import PipelineRunner
+
+        return PipelineRunner
     raise ValueError(
         f"未知 topology: {topology}"
-        f"(single | subagent | parallel | sequential | conversational | router)"
+        f"(single | subagent | parallel | sequential | conversational | router | pipeline)"
     )
 
 

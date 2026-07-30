@@ -120,6 +120,18 @@ def temp_agents(monkeypatch):
     _w("seq", "topology: sequential\nmembers: [alpha, beta]\n")
     _w("conv", "topology: conversational\nmembers: [alpha, beta]\nrounds: 2\n")
     _w("rtr", "topology: router\nroutes:\n  x: alpha\n  y: beta\n  _default: beta\n")
+    # pipeline: alpha → [alpha, beta 并行] → beta(顺序中嵌入并行)
+    _w("pipe", textwrap.dedent("""\
+        topology: pipeline
+        steps:
+          - name: s1
+            run: alpha
+          - name: s2
+            parallel: [alpha, beta]
+            aggregator: merge
+          - name: s3
+            run: beta
+    """))
 
     from app.core.config import settings
 
@@ -283,6 +295,73 @@ async def test_trigger_sequential_chains(temp_agents):
     assert "[B]" in r.output
     assert "[A]" in r.output  # 链式:beta 回显了 alpha 的输出
     assert r.extra["topology"] == "sequential"
+
+
+@pytest.mark.asyncio
+async def test_trigger_pipeline_mixed(temp_agents):
+    """pipeline:顺序步骤 + 中间并行 + 合并 + 后续步骤。
+    流程 alpha → [alpha,beta 并行] → beta。
+    验证:并行步骤等待全部完成、合并后喂给后续、步骤记录正确。
+    """
+    from app.ai.gateway import agent_gateway
+
+    r = await agent_gateway.trigger("pipe", "topic")
+    # 最终输出来自最后一步 beta
+    assert "[B]" in r.output
+    assert r.extra["topology"] == "pipeline"
+    steps = r.extra["steps"]
+    # 3 个步骤:s1(single) s2(parallel) s3(single)
+    assert len(steps) == 3
+    assert steps[0]["kind"] == "single"
+    assert steps[1]["kind"] == "parallel"
+    assert steps[1]["members"] == ["alpha", "beta"]
+    # 并行步骤合并后含两成员输出(merge 拼接)
+    merged = r.extra["step_outputs"]["s2"]
+    assert "[A]" in merged and "[B]" in merged
+    # 并行成员都跑完(各 1 条输出)
+    assert len(steps[1]["outputs"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_pipeline_custom_aggregator(temp_agents):
+    """自定义聚合器:工程师自己写合并逻辑,@aggregator 注册后 config 引用。"""
+    from app.ai.aggregators import aggregator, clear_aggregators
+    from app.ai.gateway import agent_gateway
+
+    # 定义自定义聚合器(模拟 agent 目录里 aggregator.py 的写法)
+    @aggregator("test_custom")
+    def _custom(outputs):
+        return "CUSTOM:" + ";".join(f"{n}={o[:3]}" for n, o in outputs)
+
+    # 临时建一个用自定义聚合器的 pipeline
+    import os
+
+    from app.core.config import settings
+
+    pipe_dir = os.path.join(settings.agents.agents_dir, "pipe2")
+    os.makedirs(pipe_dir, exist_ok=True)
+    with open(os.path.join(pipe_dir, "config.yml"), "w") as f:
+        f.write(textwrap.dedent("""\
+            topology: pipeline
+            steps:
+              - name: p
+                parallel: [alpha, beta]
+                aggregator: test_custom
+        """))
+    # 重新 load registry(让它发现 pipe2)
+    from app.ai.registry import AgentRegistry
+
+    reg = AgentRegistry()
+    reg.load()
+    import app.ai.gateway as gw
+
+    gw.registry = reg
+
+    r = await agent_gateway.trigger("pipe2", "x")
+    # 自定义聚合器输出格式:CUSTOM:alpha=[A;beta=[B
+    assert r.output.startswith("CUSTOM:")
+    assert "alpha=" in r.output and "beta=" in r.output
+    clear_aggregators()
 
 
 @pytest.mark.asyncio
