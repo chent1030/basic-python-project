@@ -16,3 +16,7 @@ venv/
 config/local.yaml
 *.local.yaml
 logs/
+
+# 部署环境变量(含镜像仓库密码、数据库密码等,绝不提交)
+.env
+image-tag.txt

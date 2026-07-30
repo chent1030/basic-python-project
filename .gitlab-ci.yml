@@ -1,0 +1,151 @@
+# =============================================================================
+# GitLab CI/CD —— 构建 Docker 镜像并推送到公司 Harbor/Nexus 仓库
+#
+# 流程:push/merge 到 main → 构建 → 推送镜像(tag = commit sha + latest)
+#       打 tag(v1.0.0) → 构建 → 推送镜像(tag = 版本号)
+#
+# ============================================================================
+# 必须在 GitLab 配置的 CI/CD 变量(Settings → CI/CD → Variables):
+# ============================================================================
+#   CI_REGISTRY          公司镜像仓库地址,如 harbor.example.com
+#   CI_REGISTRY_USER     推送账号
+#   CI_REGISTRY_PASSWORD 推送密码/Token
+#   CI_REGISTRY_IMAGE    镜像完整路径,如 harbor.example.com/your-group/fastapi-demo
+#                        (也可不配,默认用 $CI_REGISTRY/$CI_PROJECT_PATH)
+#   UV_INDEX_URL         公司私有 PyPI 源,如 https://pypi.internal.example.com/simple
+#   UV_INDEX_USER        私有 PyPI 用户名(无认证可留空)
+#   UV_INDEX_PASSWORD    私有 PyPI 密码(无认证可留空)
+#   PYTHON_BASE_IMAGE    公司源里的 Python 基础镜像,如 harbor.example.com/library/python:3.11-slim
+#   UV_INSTALLER_URL     uv 安装脚本内网地址,如 https://files.internal.example.com/uv/install.sh
+#
+# 建议:CI_REGISTRY_PASSWORD / UV_INDEX_PASSWORD 勾选 Masked + Protected。
+# =============================================================================
+
+variables:
+  # 镜像仓库地址(用 CI 变量覆盖;下方 fallback 给本地测试)
+  IMAGE_NAME: "${CI_REGISTRY_IMAGE:-${CI_REGISTRY:-harbor.example.com}/${CI_PROJECT_PATH:-your-group/fastapi-demo}}"
+  # docker build 用的基础镜像 + uv 源(从 CI 变量取,有默认值便于本地)
+  DOCKER_TLS_CERTDIR: "/certs"
+
+# 只在受保护分支(main/tag)触发构建流水线
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+stages:
+  - lint
+  - build
+  - deploy
+
+# -----------------------------------------------------------------------------
+# 代码检查(快,失败早退出)
+# -----------------------------------------------------------------------------
+lint:
+  stage: lint
+  image: python:3.11-slim
+  cache:
+    key: uv-${CI_COMMIT_REF_SLUG}
+    paths:
+      - .cache/uv
+  before_script:
+    - pip install --quiet ruff
+  script:
+    - ruff check app/ tests/
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  allow_failure: false
+
+# -----------------------------------------------------------------------------
+# 构建并推送镜像
+# -----------------------------------------------------------------------------
+build-image:
+  stage: build
+  image: docker:24
+  services:
+    - docker:24-dind
+  before_script:
+    # 登录公司镜像仓库(用于推送 + 拉取公司基础镜像)
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    # 决定镜像 tag:打 tag 时用版本号,否则用 commit 短 sha
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        IMAGE_TAG="$CI_COMMIT_TAG"
+      else
+        IMAGE_TAG="$CI_COMMIT_SHORT_SHA"
+      fi
+    - echo "构建镜像 $IMAGE_NAME:$IMAGE_TAG"
+    # 构建镜像:基础镜像 + uv 源全部走公司内部(通过 build arg 传入)
+    - >
+      docker build
+      --pull
+      --build-arg PYTHON_BASE_IMAGE="${PYTHON_BASE_IMAGE:-python:3.11-slim}"
+      --build-arg UV_INSTALLER_URL="${UV_INSTALLER_URL:-https://astral.sh/uv/install.sh}"
+      --build-arg UV_INDEX_URL="${UV_INDEX_URL:-}"
+      --build-arg UV_INDEX_USER="${UV_INDEX_USER:-}"
+      --build-arg UV_INDEX_PASSWORD="${UV_INDEX_PASSWORD:-}"
+      -t "$IMAGE_NAME:$IMAGE_TAG"
+      -t "$IMAGE_NAME:latest"
+      .
+    # 推送两个 tag:具体版本 + latest
+    - docker push "$IMAGE_NAME:$IMAGE_TAG"
+    - docker push "$IMAGE_NAME:latest"
+    # 把 tag 存到文件,供下游 deploy job 用
+    - echo "$IMAGE_TAG" > image-tag.txt
+  after_script:
+    - docker logout "$CI_REGISTRY"
+  artifacts:
+    name: "image-tag-${CI_COMMIT_SHORT_SHA}"
+    paths:
+      - image-tag.txt
+    expire_in: 1 week
+  rules:
+    # 只在 main 分支和 tag 上构建并推送;MR 只跑 lint
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_TAG
+
+# -----------------------------------------------------------------------------
+# 生产部署(在部署服务器上执行 docker compose)
+# -----------------------------------------------------------------------------
+# 部署不在 CI runner 里跑 compose,而是:
+# 1) CI 通过 SSH 到生产服务器
+# 2) 服务器上 docker login + docker compose pull + docker compose up -d
+#
+# 需要额外 CI 变量:
+#   DEPLOY_SSH_KEY       生产服务器 SSH 私钥(用于 ssh 登录)
+#   DEPLOY_SERVER        生产服务器地址,如 deploy@10.0.0.10
+#   DEPLOY_PATH          服务器上 compose 文件所在目录,如 /opt/fastapi-demo
+deploy-prod:
+  stage: deploy
+  image: alpine:latest
+  dependencies:
+    - build-image
+  before_script:
+    - apk add --no-cache openssh-client
+    - eval $(ssh-agent -s)
+    - echo "$DEPLOY_SSH_KEY" | ssh-add -
+    # 信任生产服务器 host key(首次),避免交互卡住
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - echo "$DEPLOY_SERVER" | awk '{print $1}'
+  script:
+    - IMAGE_TAG=$(cat image-tag.txt)
+    - SERVER=$(echo "$DEPLOY_SERVER" | awk '{print $1}')
+    - echo "部署 $IMAGE_NAME:$IMAGE_TAG 到 $SERVER"
+    # SSH 到生产服务器:登录仓库 → 拉新镜像 → 重启
+    - >
+      ssh -o StrictHostKeyChecking=accept-new "$SERVER" "
+        echo '$CI_REGISTRY_PASSWORD' | docker login -u '$CI_REGISTRY_USER' --password-stdin '$CI_REGISTRY'
+        cd ${DEPLOY_PATH:-/opt/fastapi-demo}
+        export IMAGE_NAME='$IMAGE_NAME'
+        export IMAGE_TAG='$IMAGE_TAG'
+        docker compose -f docker-compose.prod.yml pull app
+        docker compose -f docker-compose.prod.yml up -d app
+      "
+  rules:
+    # 只有打 tag 才自动部署生产(main 分支只构建不部署)
+    - if: $CI_COMMIT_TAG
+  environment:
+    name: production
+    url: http://${CI_COMMIT_REF_SLUG}.your-domain.com
