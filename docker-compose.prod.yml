@@ -15,13 +15,13 @@
 services:
   app:
     # 从源码构建(build),不拉远程应用镜像。
-    # build args 由 deploy.sh 传入(基础镜像/uv 源走 JFrog)。
+    # build args 由 deploy.sh/.env 传入(基础镜像 + PyPI 源走 JFrog)。
+    # uv 用 pip 从 UV_INDEX_URL 装,不走 astral.sh 脚本。
     build:
       context: .
       dockerfile: Dockerfile
       args:
         PYTHON_BASE_IMAGE: "${PYTHON_BASE_IMAGE:-python:3.11-slim}"
-        UV_INSTALLER_URL: "${UV_INSTALLER_URL:-https://astral.sh/uv/install.sh}"
         UV_INDEX_URL: "${UV_INDEX_URL:-}"
         UV_INDEX_USER: "${UV_INDEX_USER:-}"
         UV_INDEX_PASSWORD: "${UV_INDEX_PASSWORD:-}"

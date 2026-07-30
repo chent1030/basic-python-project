@@ -5,27 +5,25 @@
 # 现代 Docker(20.10+/24+)默认 BuildKit 已支持 --mount=type=cache。
 #
 # 公司内网部署说明:
-#   - 基础镜像走公司镜像源(默认 python:3.11-slim,CI 时通过 --build-arg 覆盖)
-#   - uv 从公司私有 PyPI 源装包(通过 UV_INDEX_URL build arg)
-#   - 本地构建(公网)直接 docker build 即可;CI 构建传 build args 指向内网
+#   - 基础镜像走公司镜像源(默认 python:3.11-slim,通过 --build-arg 覆盖)
+#   - uv 用 pip 从公司私有 PyPI 源安装(pip install uv),不走 astral.sh 脚本(内网拉不到)
+#   - uv 装项目依赖也走同一个私有源(通过 UV_INDEX_URL build arg)
+#   - 本地构建(公网)直接 docker build 即可;内网构建传 build args 指向内网
 #
 #   # 本地(公网)构建:
 #   docker build -t fastapi-demo:latest .
 #
-#   # CI / 内网构建(示例):
+#   # 内网构建(示例):
 #   docker build \
-#     --build-arg PYTHON_BASE_IMAGE=harbor.example.com/library/python:3.11-slim \
-#     --build-arg UV_INDEX_URL=https://pypi.internal.example.com/simple \
-#     --build-arg UV_INSTALLER_URL=https://files.internal.example.com/uv/install.sh \
-#     -t harbor.example.com/your-group/fastapi-demo:latest .
+#     --build-arg PYTHON_BASE_IMAGE=jfrog.company.com/docker-proxy/python:3.11-slim \
+#     --build-arg UV_INDEX_URL=https://jfrog.company.com/api/pypi/pypi-proxy/simple \
+#     -t fastapi-demo:latest .
 #
 # 配置 / prompts 通过卷挂载,无需重新构建镜像即可改配置。
 # =============================================================================
 
 # 基础镜像:默认 Docker Hub 公网;CI 时覆盖为公司镜像源。
 ARG PYTHON_BASE_IMAGE=python:3.11-slim
-# uv 安装脚本地址:默认 astral.sh 公网;CI 时覆盖为公司内网镜像。
-ARG UV_INSTALLER_URL=https://astral.sh/uv/install.sh
 
 # -----------------------------------------------------------------------------
 # Stage 1: builder — 安装依赖,编译 C 扩展(asyncpg / bcrypt / hiredis / orjson)
@@ -34,6 +32,7 @@ FROM ${PYTHON_BASE_IMAGE} AS builder
 
 # uv 私有 PyPI 源(通过 ARG 传入,默认公网 PyPI)。
 # 也支持带认证的源:https://user:pass@pypi.internal.example.com/simple
+# 注意:uv 本身也用 pip 从这个源安装(pip install uv),不再用 astral.sh 脚本(内网拉不到)。
 ARG UV_INDEX_URL=""
 ARG UV_INDEX_USER=""
 ARG UV_INDEX_PASSWORD=""
@@ -49,26 +48,27 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# 安装 uv(从 UV_INSTALLER_URL 拉取;CI 时指向公司内网镜像)
-ADD --chmod=755 ${UV_INSTALLER_URL} /tmp/uv-install.sh
-RUN /tmp/uv-install.sh && rm /tmp/uv-install.sh
+# 配置 PyPI 源 + 装 uv + 把同一源配给 uv(一个 RUN 内完成)。
+# 用 pip install uv 安装(不走 astral.sh 脚本,内网拉不到)。
+# _idx 用 shell 参数扩展把带认证的源拼成 https://user:pass@host/simple(避免 sed 兼容问题)。
+# 注:Dockerfile RUN 默认 /bin/sh(非 bash),不能用 local,函数内变量直接赋值。
+RUN _idx() { \
+        proto="${UV_INDEX_URL%%://*}://"; \
+        rest="${UV_INDEX_URL#*://}"; \
+        if [ -n "$UV_INDEX_USER" ]; then \
+            echo "${proto}${UV_INDEX_USER}:${UV_INDEX_PASSWORD}@${rest}"; \
+        else \
+            echo "$UV_INDEX_URL"; \
+        fi; \
+    } \
+    && if [ -n "$UV_INDEX_URL" ]; then pip config set global.index-url "$(_idx)"; fi \
+    && pip install --no-cache-dir uv \
+    && if [ -n "$UV_INDEX_URL" ]; then uv config set index-url "$(_idx)"; fi
 
-# 配置 uv:走私有 PyPI 源 + 编译字节码 + 不自动下 Python
+# 配置 uv:编译字节码 + 不自动下 Python
 ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
-    UV_PYTHON_DOWNLOADS=never \
-    PATH="/root/.local/bin:${PATH}"
-# 若提供了私有源,设为默认 index-url。
-# 带认证时把 user:password 嵌入 URL(https://user:pass@host/simple)。
-RUN if [ -n "$UV_INDEX_URL" ]; then \
-        if [ -n "$UV_INDEX_USER" ]; then \
-            PROTO=$(echo "$UV_INDEX_URL" | sed -n 's#^\(https\?://\).*#\1#p'); \
-            REST=$(echo "$UV_INDEX_URL" | sed 's#^https\?://##'); \
-            uv config set index-url "${PROTO}${UV_INDEX_USER}:${UV_INDEX_PASSWORD}@${REST}"; \
-        else \
-            uv config set index-url "$UV_INDEX_URL"; \
-        fi; \
-    fi
+    UV_PYTHON_DOWNLOADS=never
 
 WORKDIR /app
 
