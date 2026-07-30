@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 自动部署脚本 —— 在生产服务器上运行
+# 自动部署脚本 —— 在生产服务器上从源码构建镜像并运行
+#
+# 部署方式:
+#   - 源码 docker build 构建镜像(不拉远程应用镜像,也不推 JFrog)
+#   - 构建时拉基础镜像(python)+ Python 包走 JFrog 代理(公司内网),故需 docker login JFrog
+#   - 构建完用 docker compose 启动
 #
 # 用法:
 #   1. 把代码 clone 到服务器: git clone <repo> /opt/fastapi-demo && cd /opt/fastapi-demo
-#   2. 配置 .env:cp .env.example .env && vi .env  (填 JFrog 地址/账号/镜像名等)
-#   3. 配置 config/local.yaml(数据库密码、LLM key 等)
-#   4. 部署:./deploy.sh deploy
+#   2. 配置: cp .env.example .env && vi .env   (JFrog 地址/账号、数据库密码等)
+#   3. 配置: vi config/local.yaml              (LLM key、数据源密码)
+#   4. 部署: ./deploy.sh deploy
 #
 # 子命令:
-#   deploy    登录 JFrog → 拉最新镜像 → (首次)跑迁移 → 启动/更新服务
-#   up        只启动/更新服务(不拉镜像、不登录)
-#   pull      只登录 + 拉镜像
+#   deploy    登录 JFrog → 构建镜像 → (首次)迁移 → 启动/更新
+#   build     只登录 + 构建镜像(不启动)
+#   up        只启动/更新服务(不构建)
 #   migrate   进 app 容器跑 alembic 数据库迁移
 #   restart   重启 app 容器
 #   stop      停止所有服务
@@ -45,50 +50,47 @@ fi
 set -a; source "$ENV_FILE"; set +a
 
 # 校验必填变量
-: "${REGISTRY:?在 .env 里缺少 REGISTRY(JFrog 镜像仓库地址)}"
+: "${REGISTRY:?在 .env 里缺少 REGISTRY(JFrog 地址)}"
 : "${REGISTRY_USER:?在 .env 里缺少 REGISTRY_USER}"
 : "${REGISTRY_PASSWORD:?在 .env 里缺少 REGISTRY_PASSWORD}"
-: "${IMAGE_NAME:?在 .env 里缺少 IMAGE_NAME(完整镜像路径)}"
 
-IMAGE_TAG="${IMAGE_TAG:-latest}"
+APP_IMAGE="${APP_IMAGE:-fastapi-demo:latest}"
 COMPOSE="docker compose -f $COMPOSE_FILE --env-file $ENV_FILE"
 
 # ---------- 前置检查 ----------
 check_prereqs() {
     command -v docker >/dev/null 2>&1 || die "未安装 docker"
     docker info >/dev/null 2>&1 || die "docker daemon 未运行,请先启动 docker"
-    # docker compose v2(插件)优先;v1(docker-compose)兜底
-    if docker compose version >/dev/null 2>&1; then
-        :
-    elif command -v docker-compose >/dev/null 2>&1; then
-        COMPOSE="docker-compose -f $COMPOSE_FILE --env-file $ENV_FILE"
-        warn "使用 docker-compose v1,建议升级到 docker compose v2"
-    else
-        die "未安装 docker compose(运行: docker compose version 检查)"
+    if ! docker compose version >/dev/null 2>&1; then
+        if command -v docker-compose >/dev/null 2>&1; then
+            COMPOSE="docker-compose -f $COMPOSE_FILE --env-file $ENV_FILE"
+            warn "使用 docker-compose v1,建议升级到 docker compose v2"
+        else
+            die "未安装 docker compose(运行: docker compose version 检查)"
+        fi
     fi
 }
 
-# ---------- 登录 JFrog 镜像仓库 ----------
+# ---------- 登录 JFrog(让 build 时能拉基础镜像)----------
 do_login() {
-    info "登录 JFrog 镜像仓库: $REGISTRY"
-    # 用 stdin 传密码,避免出现在 ps / 命令行历史
+    info "登录 JFrog: $REGISTRY"
     echo "$REGISTRY_PASSWORD" | docker login "$REGISTRY" -u "$REGISTRY_USER" --password-stdin \
-        || die "docker login 失败,请检查 REGISTRY/REGISTRY_USER/REGISTRY_PASSWORD"
+        || die "docker login 失败,请检查 .env 的 REGISTRY/REGISTRY_USER/REGISTRY_PASSWORD"
     ok "已登录 $REGISTRY"
 }
 
-# ---------- 拉取镜像 ----------
-do_pull() {
+# ---------- 构建镜像(build args 走 JFrog)----------
+do_build() {
     do_login
-    info "拉取镜像 $IMAGE_NAME:$IMAGE_TAG"
-    $COMPOSE pull
-    ok "镜像拉取完成"
+    info "构建镜像 $APP_IMAGE(基础镜像 + Python 包走 JFrog)"
+    # build args 从 .env 注入:基础镜像、uv 源、PyPI 源全部走 JFrog
+    $COMPOSE build app
+    ok "镜像构建完成: $APP_IMAGE"
 }
 
 # ---------- 数据库迁移 ----------
 do_migrate() {
     info "运行数据库迁移(alembic upgrade head)"
-    # 确保 app 容器在跑,迁移在容器内执行
     $COMPOSE up -d --no-deps app >/dev/null 2>&1 || true
     $COMPOSE exec -T app alembic upgrade head \
         || die "迁移失败。可手动排查: $COMPOSE exec app alembic upgrade head"
@@ -98,29 +100,29 @@ do_migrate() {
 # ---------- 部署主流程 ----------
 do_deploy() {
     check_prereqs
-    info "部署镜像: $IMAGE_NAME:$IMAGE_TAG"
+    info "部署应用镜像: $APP_IMAGE"
 
-    # 1. 登录 + 拉镜像
-    do_pull
+    # 1. 登录 JFrog + 构建镜像
+    do_build
 
-    # 2. 启动依赖(postgres/redis)并等待健康
+    # 2. 启动依赖(postgres/redis)
     info "启动数据源服务(postgres/redis)"
     $COMPOSE up -d postgres redis
 
-    # 3. 首次部署或新增表时跑迁移(用文件标记是否已迁移过本次 tag)
-    MIGRATE_MARKER="logs/.migrated-${IMAGE_TAG}"
+    # 3. 首次部署跑迁移(用文件标记,避免重复)
+    MIGRATE_MARKER="logs/.migrated"
     mkdir -p logs
     if [[ ! -f "$MIGRATE_MARKER" ]]; then
-        do_migrate && touch "$MIGRATE_MARKER" || warn "迁移标记未写入,下次 deploy 会重试迁移"
+        do_migrate && touch "$MIGRATE_MARKER" || warn "迁移标记未写入,下次 deploy 会重试"
     else
-        info "本次 tag($IMAGE_TAG)已迁移过,跳过(强制迁移用: ./deploy.sh migrate)"
+        info "已迁移过,跳过(强制迁移用: ./deploy.sh migrate)"
     fi
 
-    # 4. 启动/更新 app
+    # 4. 启动/更新 app(用刚构建的镜像)
     info "启动 app 服务"
-    $COMPOSE up -d app
+    $COMPOSE up -d --no-build app
 
-    # 5. 清理旧镜像(可选,省磁盘)
+    # 5. 清理旧镜像(可选)
     if [[ "${PRUNE_IMAGES:-yes}" == "yes" ]]; then
         info "清理悬空镜像(dangling)"
         docker image prune -f >/dev/null 2>&1 || true
@@ -133,8 +135,8 @@ do_deploy() {
 cmd="${1:-deploy}"
 case "$cmd" in
     deploy)  check_prereqs; do_deploy ;;
+    build)   check_prereqs; do_build ;;
     up)      check_prereqs; info "启动服务"; $COMPOSE up -d ;;
-    pull)    check_prereqs; do_pull ;;
     migrate) check_prereqs; do_migrate ;;
     restart) check_prereqs; info "重启 app"; $COMPOSE restart app ;;
     stop)    check_prereqs; info "停止所有服务"; $COMPOSE down ;;
@@ -142,5 +144,5 @@ case "$cmd" in
     status)  check_prereqs; $COMPOSE ps ;;
     clean)   check_prereqs; warn "将停止并删除容器(保留数据卷)"; $COMPOSE down ;;
     *)       die "未知命令: $cmd
-可用命令: deploy | up | pull | migrate | restart | stop | logs | status | clean" ;;
+可用命令: deploy | build | up | migrate | restart | stop | logs | status | clean" ;;
 esac

@@ -1,23 +1,31 @@
 # =============================================================================
-# 生产部署用 docker-compose —— 从 JFrog 镜像仓库拉取(不本地构建)
+# 生产部署用 docker-compose —— 在服务器上从源码构建镜像后运行
 #
-# 推荐用 deploy.sh 一键部署(自动 login JFrog + pull + migrate + up):
+# 推荐用 deploy.sh 一键部署(自动 login JFrog + build + migrate + up):
 #   ./deploy.sh deploy
+#
+# 构建时基础镜像(python)和 Python 包都走 JFrog 代理(公司内网),
+# 由 deploy.sh 通过 --build-arg 注入,这里不写死。
 #
 # 也可手动:
 #   docker login your-jfrog.company.com -u 用户名 -p 密码
-#   docker compose -f docker-compose.prod.yml --env-file .env pull
-#   docker compose -f docker-compose.prod.yml --env-file .env up -d
-#
-# 镜像地址通过环境变量 IMAGE_NAME / IMAGE_TAG 控制(由 .env 注入):
-#   IMAGE_NAME=your-jfrog.company.com/docker-local/fastapi-demo
-#   IMAGE_TAG=latest        # 或具体版本号 v1.0.0 / commit sha
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 # =============================================================================
 
 services:
   app:
-    # 镜像名:tag 从环境变量取(.env 注入),不从源码 build
-    image: "${IMAGE_NAME:-your-jfrog.company.com/docker-local/fastapi-demo}:${IMAGE_TAG:-latest}"
+    # 从源码构建(build),不拉远程应用镜像。
+    # build args 由 deploy.sh 传入(基础镜像/uv 源走 JFrog)。
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PYTHON_BASE_IMAGE: "${PYTHON_BASE_IMAGE:-python:3.11-slim}"
+        UV_INSTALLER_URL: "${UV_INSTALLER_URL:-https://astral.sh/uv/install.sh}"
+        UV_INDEX_URL: "${UV_INDEX_URL:-}"
+        UV_INDEX_USER: "${UV_INDEX_USER:-}"
+        UV_INDEX_PASSWORD: "${UV_INDEX_PASSWORD:-}"
+    image: "${APP_IMAGE:-fastapi-demo:latest}"   # 构建出的本地镜像名
     container_name: fastapi-demo-app
     restart: unless-stopped
     ports:
