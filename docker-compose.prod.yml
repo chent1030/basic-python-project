@@ -1,26 +1,23 @@
 # =============================================================================
-# 生产部署用 docker-compose —— 从公司 Harbor 拉镜像(不本地构建)
+# 生产部署用 docker-compose —— 从 JFrog 镜像仓库拉取(不本地构建)
 #
-# 生产服务器上的部署流程:
-#   1. 安装 docker + docker compose
-#   2. 配置镜像仓库登录(只需一次):
-#        docker login harbor.example.com -u 用户名 -p 密码
-#      或用 compose 的方式:见下方注释
-#   3. 把本文件 + .env + config/local.yaml 放到服务器(如 /opt/fastapi-demo/)
-#   4. 启动:
-#        docker compose -f docker-compose.prod.yml up -d
-#   5. 更新(拉新镜像后重启):
-#        docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
+# 推荐用 deploy.sh 一键部署(自动 login JFrog + pull + migrate + up):
+#   ./deploy.sh deploy
+#
+# 也可手动:
+#   docker login your-jfrog.company.com -u 用户名 -p 密码
+#   docker compose -f docker-compose.prod.yml --env-file .env pull
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d
 #
 # 镜像地址通过环境变量 IMAGE_NAME / IMAGE_TAG 控制(由 .env 注入):
-#   IMAGE_NAME=harbor.example.com/your-group/fastapi-demo
+#   IMAGE_NAME=your-jfrog.company.com/docker-local/fastapi-demo
 #   IMAGE_TAG=latest        # 或具体版本号 v1.0.0 / commit sha
 # =============================================================================
 
 services:
   app:
     # 镜像名:tag 从环境变量取(.env 注入),不从源码 build
-    image: "${IMAGE_NAME:-harbor.example.com/your-group/fastapi-demo}:${IMAGE_TAG:-latest}"
+    image: "${IMAGE_NAME:-your-jfrog.company.com/docker-local/fastapi-demo}:${IMAGE_TAG:-latest}"
     container_name: fastapi-demo-app
     restart: unless-stopped
     ports:
