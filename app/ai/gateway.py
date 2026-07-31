@@ -11,6 +11,7 @@ gateway 复用 app.services.llm 的 provider(单一真相源),不重建 provider
 from __future__ import annotations
 
 import time
+import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -30,6 +31,9 @@ class AgentGateway:
     def __init__(self) -> None:
         self._runners: dict[str, Any] = {}  # agent name -> runner(single 拓扑缓存)
         self._mw_factory: Any = None  # 中间件 pipeline(惰性)
+        # HITL:pending 的待确认调用 run_id -> (name, message, ctx, cfg, source, session_id)
+        # 第一期内存存储(重启丢失);生产可换 DB
+        self._pending: dict[str, dict[str, Any]] = {}
 
     # ---------- lifecycle ---------------------------------------------
     async def startup(self) -> None:
@@ -89,6 +93,10 @@ class AgentGateway:
             source=source,
             user_id=user_id,
         )
+        # HITL:需要人确认的 agent,第一次调用返回 pending(不执行)
+        pending = self._check_hitl(name, message, ctx, cfg, source, session_id)
+        if pending is not None:
+            return pending
         return await self._run(ctx, cfg)
 
     async def trigger_stream(
@@ -126,6 +134,10 @@ class AgentGateway:
             source=source,
             user_id=user_id,
         )
+        # HITL:需要人确认的 agent,第一次调用返回 pending(不执行)
+        pending = self._check_hitl(name, message, ctx, cfg, source, session_id)
+        if pending is not None:
+            return pending
         return await self._run(ctx, cfg)
 
     async def chat_stream(
@@ -138,6 +150,63 @@ class AgentGateway:
         )
         async for chunk in self._run_stream(ctx, cfg):
             yield chunk
+
+    # ---------- HITL:Human-in-the-loop 暂停/恢复 ----------------------
+    def _check_hitl(
+        self, name: str, message: str, ctx: AgentRunContext, cfg: AgentConfig,
+        source: TriggerSource, session_id: str | None,
+    ) -> AgentResult | None:
+        """若 agent 配置了 hitl.require_confirmation,挂起本次调用,返回 pending。
+
+        把调用上下文存入 self._pending,等 confirm(run_id) 批准后取出继续执行。
+        返回 None=不需要确认,正常执行;返回 AgentResult=pending 状态。
+        """
+        if not cfg.hitl.require_confirmation:
+            return None
+        run_id = ctx.extra.get("run_id") or uuid.uuid4().hex
+        self._pending[run_id] = {
+            "name": name, "message": message, "ctx": ctx, "cfg": cfg,
+            "source": source, "session_id": session_id,
+        }
+        log.info("HITL:agent '%s' 待确认 run_id=%s(批准后执行)", name, run_id)
+        return AgentResult(
+            output="",
+            extra={
+                "status": "awaiting_confirmation",
+                "run_id": run_id,
+                "agent": name,
+                "message": (
+                    f"本次调用需人工确认。"
+                    f"POST /agents/{name}/runs/{run_id}/confirm 批准后执行"
+                ),
+            },
+        )
+
+    async def confirm(self, run_id: str, decision: str = "approve") -> AgentResult:
+        """批准/拒绝一个挂起的 HITL 调用。
+
+        decision: approve(执行) | reject(拒绝,返回取消信息)
+        批准后取出挂起的上下文,继续走完整 _run 流程。
+        """
+        pending = self._pending.pop(run_id, None)
+        if pending is None:
+            return AgentResult(
+                output="",
+                extra={
+                    "status": "not_found",
+                    "run_id": run_id,
+                    "error": "无此待确认调用(可能已过期或已处理)",
+                },
+            )
+        if decision == "reject":
+            log.info("HITL:run_id=%s 已拒绝", run_id)
+            return AgentResult(
+                output="",
+                extra={"status": "rejected", "run_id": run_id, "agent": pending["name"]},
+            )
+        # approve:取出上下文继续执行
+        log.info("HITL:run_id=%s 已批准,开始执行 agent '%s'", run_id, pending["name"])
+        return await self._run(pending["ctx"], pending["cfg"])
 
     # ---------- 核心:运行流程 -----------------------------------------
     async def _run(

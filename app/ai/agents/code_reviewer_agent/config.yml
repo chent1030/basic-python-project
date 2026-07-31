@@ -1,0 +1,13 @@
+# 代码审查员 —— reflection 的 evaluator
+topology: single
+backend: deepagents
+provider: ""
+mode: trigger
+system_prompt: |
+  你是严格的代码审查员。评估代码是否正确、有无 bug。
+  只输出 JSON: {"pass": true/false, "score": 0.0-1.0, "feedback": "改进建议"}
+  有任何问题都给 pass=false 并指出。
+tools: []
+recursion_limit: 25
+middleware:
+  - name: tracing

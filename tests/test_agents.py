@@ -520,3 +520,200 @@ async def test_memory_store_disabled_is_noop():
 
     assert await memory_store.recall("ag", "q") == []
     await memory_store.remember("ag", "fact")  # 不应抛错
+
+
+# ======================================================================
+# plan_execute / reflection runners(纯单测,mock run_member)
+# ======================================================================
+@pytest.mark.asyncio
+async def test_plan_execute_runner():
+    """planner 规划步骤 JSON → executor 逐步执行。"""
+    from app.ai.config import AgentConfig
+    from app.ai.runners.plan_execute import PlanExecuteRunner
+
+    cfg = AgentConfig(topology="plan_execute", planner="p", executor="e", max_steps=5)
+    runner = PlanExecuteRunner(cfg)
+    ctx = AgentRunContext(agent_name="pf", messages=[{"role": "user", "content": "任务"}])
+
+    call_log = []
+
+    async def mock_run_member(name, message, parent_ctx):
+        call_log.append((name, message[:30]))
+        if name == "p" and "拆解" in message:
+            return AgentResult(output='{"steps": ["调研", "总结", "输出"]}')
+        return AgentResult(output=f"[{name}]done")
+
+    result = await runner.run(ctx, mock_run_member)
+    assert result.extra["plan"] == ["调研", "总结", "输出"]
+    assert len(result.extra["steps_executed"]) == 3
+    assert result.output == "[e]done"
+    # planner 调 1 次(规划),executor 调 3 次(逐步)
+    assert sum(1 for n, _ in call_log if n == "p") == 1
+    assert sum(1 for n, _ in call_log if n == "e") == 3
+
+
+@pytest.mark.asyncio
+async def test_plan_execute_parse_fallback():
+    """planner 输出非 JSON 时,兜底按行解析。"""
+    from app.ai.runners.plan_execute import PlanExecuteRunner
+
+    steps = PlanExecuteRunner._parse_steps("1. 第一步\n2. 第二步\n\n垃圾行")
+    assert "第一步" in steps and "第二步" in steps
+
+
+@pytest.mark.asyncio
+async def test_reflection_runner_pass_on_retry():
+    """executor 执行 → evaluator 第1次 fail(带反馈)→ 第2次 pass。"""
+    from app.ai.config import AgentConfig
+    from app.ai.runners.reflection import ReflectionRunner
+
+    cfg = AgentConfig(
+        topology="reflection", executor="coder", evaluator="rev",
+        max_iterations=3, pass_threshold=0.8,
+    )
+    runner = ReflectionRunner(cfg)
+    ctx = AgentRunContext(agent_name="cl", messages=[{"role": "user", "content": "写排序"}])
+
+    eval_count = {"n": 0}
+
+    async def mock_run_member(name, message, parent_ctx):
+        if name == "coder":
+            return AgentResult(output="def sort(): ...")
+        # evaluator
+        eval_count["n"] += 1
+        if eval_count["n"] == 1:
+            return AgentResult(output='{"pass": false, "score": 0.4, "feedback": "有bug"}')
+        return AgentResult(output='{"pass": true, "score": 0.9, "feedback": "通过"}')
+
+    result = await runner.run(ctx, mock_run_member)
+    assert result.extra["passed"] is True
+    assert result.extra["total_iterations"] == 2
+    assert result.extra["final_score"] == 0.9
+    # 第2次执行应含反馈
+    assert result.extra["iterations"][0]["feedback"] == "有bug"
+
+
+@pytest.mark.asyncio
+async def test_reflection_runner_max_iterations():
+    """一直不达标,达 max_iterations 返回最后结果(标注未通过)。"""
+    from app.ai.config import AgentConfig
+    from app.ai.runners.reflection import ReflectionRunner
+
+    cfg = AgentConfig(
+        topology="reflection", executor="coder", evaluator="rev",
+        max_iterations=2, pass_threshold=0.8,
+    )
+    runner = ReflectionRunner(cfg)
+    ctx = AgentRunContext(agent_name="cl", messages=[{"role": "user", "content": "x"}])
+
+    async def mock_run_member(name, message, parent_ctx):
+        if name == "coder":
+            return AgentResult(output="code")
+        return AgentResult(output='{"pass": false, "score": 0.3, "feedback": "仍不行"}')
+
+    result = await runner.run(ctx, mock_run_member)
+    assert result.extra["passed"] is False
+    assert result.extra["total_iterations"] == 2  # 达上限
+
+
+@pytest.mark.asyncio
+async def test_custom_aggregator_registration():
+    """@aggregator 装饰器注册 + get_aggregator 取用。"""
+    from app.ai.aggregators import aggregator, clear_aggregators, get_aggregator
+
+    @aggregator("test_agg_x")
+    def _agg(outputs):
+        return "|".join(n for n, _ in outputs)
+
+    from app.ai.aggregators import all_aggregators
+
+    assert "test_agg_x" in all_aggregators()
+    result = get_aggregator("test_agg_x")([("a", "1"), ("b", "2")])
+    assert result == "a|b"
+    # 内置仍可用
+    assert get_aggregator("merge")([("a", "1")]) == "## a\n1"
+    clear_aggregators()
+
+
+# ======================================================================
+# HITL(Human-in-the-loop)暂停/恢复
+# ======================================================================
+@pytest.mark.asyncio
+async def test_hitl_pending_then_approve(temp_agents, monkeypatch):
+    """配置 hitl.require_confirmation 的 agent:第一次返回 pending,confirm 后执行。"""
+    import os
+
+    from app.core.config import settings
+
+    p = os.path.join(settings.agents.agents_dir, "risky")
+    os.makedirs(p, exist_ok=True)
+    with open(os.path.join(p, "config.yml"), "w") as f:
+        f.write(textwrap.dedent("""\
+            topology: single
+            backend: deepagents
+            system_prompt: RISKY
+            hitl:
+              require_confirmation: true
+        """))
+    from app.ai.registry import AgentRegistry
+
+    reg = AgentRegistry()
+    reg.load()
+    from app.ai.gateway import agent_gateway
+
+    monkeypatch.setattr("app.ai.gateway.registry", reg)
+
+    # 第一次:返回 pending(不执行)
+    r = await agent_gateway.trigger("risky", "删数据", source="api")
+    assert r.extra["status"] == "awaiting_confirmation"
+    run_id = r.extra["run_id"]
+
+    # 批准后执行(stub backend 返回 [RISKY])
+    r2 = await agent_gateway.confirm(run_id, decision="approve")
+    assert "[RISKY]" in r2.output
+
+    # 重复确认 → not_found
+    r3 = await agent_gateway.confirm(run_id, decision="approve")
+    assert r3.extra["status"] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_hitl_reject(temp_agents, monkeypatch):
+    """reject 取消挂起的调用,不执行。"""
+    import os
+
+    from app.core.config import settings
+
+    p = os.path.join(settings.agents.agents_dir, "risky2")
+    os.makedirs(p, exist_ok=True)
+    with open(os.path.join(p, "config.yml"), "w") as f:
+        f.write(textwrap.dedent("""\
+            topology: single
+            backend: deepagents
+            system_prompt: R2
+            hitl:
+              require_confirmation: true
+        """))
+    from app.ai.registry import AgentRegistry
+
+    reg = AgentRegistry()
+    reg.load()
+    from app.ai.gateway import agent_gateway
+
+    monkeypatch.setattr("app.ai.gateway.registry", reg)
+
+    r = await agent_gateway.trigger("risky2", "x", source="api")
+    run_id = r.extra["run_id"]
+    r2 = await agent_gateway.confirm(run_id, decision="reject")
+    assert r2.extra["status"] == "rejected"
+    assert r2.output == ""  # 未执行
+
+
+@pytest.mark.asyncio
+async def test_hitl_not_required_executes_directly(temp_agents):
+    """未配置 hitl 的 agent 正常执行,不挂起。"""
+    from app.ai.gateway import agent_gateway
+
+    r = await agent_gateway.trigger("alpha", "hi", source="api")
+    assert "[A]" in r.output  # 直接执行,无 pending
+    assert r.extra.get("status") != "awaiting_confirmation"

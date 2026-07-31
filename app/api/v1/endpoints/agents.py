@@ -105,6 +105,31 @@ async def chat_stream(name: str, body: ChatIn) -> AsyncIterable[ServerSentEvent]
     yield ServerSentEvent(data="[DONE]", event="done")
 
 
+# ----------------------------------------------------------------- HITL 确认
+class ConfirmIn(BaseModel):
+    decision: str = "approve"   # approve | reject
+
+
+@router.post("/{name}/runs/{run_id}/confirm")
+async def confirm_run(name: str, run_id: str, body: ConfirmIn) -> dict[str, object]:
+    """批准/拒绝一个挂起的 HITL(需人工确认)调用。
+
+    agent 配置 hitl.require_confirmation=true 时,trigger/chat 返回 pending,
+    调用本端点批准(approve)后真正执行,或拒绝(reject)取消。
+    """
+    if not registry.has(name):
+        raise HTTPException(status_code=404, detail=f"agent '{name}' 未注册")
+    result = await agent_gateway.confirm(run_id, decision=body.decision)
+    return {
+        "agent": name,
+        "run_id": run_id,
+        "decision": body.decision,
+        "status": result.extra.get("status", "executed"),
+        "output": result.output,
+        "extra": result.extra,
+    }
+
+
 # ----------------------------------------------------------------- 状态监控
 @router.get("/{name}/runs")
 async def list_runs(

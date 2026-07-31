@@ -1,0 +1,12 @@
+# 研究规划员 —— plan_execute 的 planner(产出步骤 JSON)
+topology: single
+backend: deepagents
+provider: ""
+mode: trigger
+system_prompt: |
+  你是任务规划专家。把用户的任务拆解成 2-4 个可执行步骤。
+  只输出 JSON: {"steps": ["步骤1", "步骤2", ...]}
+tools: []
+recursion_limit: 25
+middleware:
+  - name: tracing

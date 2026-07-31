@@ -40,6 +40,7 @@ def _middleware_constructors() -> dict[str, callable]:
         "session_memory": _mk("session_memory", "SessionMemoryMiddleware"),
         "persistent_memory": _mk("persistent_memory", "PersistentMemoryMiddleware"),
         "external_memory": _mk("external_memory", "ExternalMemoryMiddleware"),
+        "summarization": _mk("summarization", "SummarizationMiddleware"),
         "filter": _mk("filter", "FilterMiddleware"),
     }
 

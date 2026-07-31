@@ -1,0 +1,9 @@
+# 编码反思循环 —— reflection 拓扑
+# coder_agent 写代码 → code_reviewer_agent 审查 → 不过则带反馈重写
+topology: reflection
+executor: coder_agent
+evaluator: code_reviewer_agent
+max_iterations: 3
+pass_threshold: 0.8
+middleware:
+  - name: tracing

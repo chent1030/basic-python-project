@@ -18,10 +18,11 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field
 
-# 7 种拓扑
+# 9 种拓扑
 Topology = Literal[
     "single", "subagent", "parallel", "sequential",
     "conversational", "router", "pipeline",
+    "plan_execute", "reflection",
 ]
 # 后端
 Backend = Literal["deepagents", "agentscope"]
@@ -69,8 +70,20 @@ class PipelineStep(BaseModel):
     parallel: list[str] = Field(default_factory=list)  # 并行步骤(多个 agent)
     aggregator: str = "merge"           # 并行步骤的合并方式
     input_from: str = ""                # 可选:显式指定输入来源步骤名
-    name: str
-    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class HITLConfig(BaseModel):
+    """Human-in-the-loop 横切配置(任何 agent 可配)。
+
+    require_confirmation: True=执行前需人审批(第一次调用返回 pending,
+        confirm 后才真正执行)。适合高风险 agent。
+    tools: (预留)这些工具被调用前需人确认。第一期未实现工具级拦截。
+    auto_approve_others: (预留)其它工具是否自动放行。
+    """
+
+    require_confirmation: bool = False
+    tools: list[str] = Field(default_factory=list)
+    auto_approve_others: bool = True
 
 
 class AgentConfig(BaseModel):
@@ -117,6 +130,18 @@ class AgentConfig(BaseModel):
     routes: dict[str, str] = Field(default_factory=dict)
     # 拓扑:pipeline 步骤列表(顺序执行,某步可 parallel 并行)
     steps: list[PipelineStep] = Field(default_factory=list)
+    # 拓扑:plan_execute —— planner 规划步骤,executor 逐步执行
+    planner: str = ""
+    executor: str = ""           # 空=planner 自己执行各步
+    max_steps: int = 10
+    # 拓扑:reflection —— executor 执行,evaluator 评估,不达标带反馈重试
+    # 复用 executor/max_iterations/pass_threshold(下方)
+    evaluator: str = ""
+    max_iterations: int = 3
+    pass_threshold: float = 0.8
+
+    # 横切:Human-in-the-loop(任何 agent 可配;工具调用前需人确认)
+    hitl: HITLConfig = Field(default_factory=HITLConfig)
 
     middleware: list[MiddlewareSpec] = Field(default_factory=list)
 

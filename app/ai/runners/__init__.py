@@ -39,9 +39,18 @@ def pick_runner(topology: str) -> type[BaseRunner]:
         from app.ai.runners.pipeline import PipelineRunner
 
         return PipelineRunner
+    if topology == "plan_execute":
+        from app.ai.runners.plan_execute import PlanExecuteRunner
+
+        return PlanExecuteRunner
+    if topology == "reflection":
+        from app.ai.runners.reflection import ReflectionRunner
+
+        return ReflectionRunner
     raise ValueError(
         f"未知 topology: {topology}"
-        f"(single | subagent | parallel | sequential | conversational | router | pipeline)"
+        f"(single | subagent | parallel | sequential | conversational | "
+        f"router | pipeline | plan_execute | reflection)"
     )
 
 

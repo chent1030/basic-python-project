@@ -1,0 +1,8 @@
+# 研究规划执行流 —— plan_execute 拓扑
+# research_planner 规划步骤 → research_planner 自己逐步执行( executor 空=planner 执行)
+topology: plan_execute
+planner: research_planner
+executor: ""              # 空=planner 自己执行各步
+max_steps: 5
+middleware:
+  - name: tracing
