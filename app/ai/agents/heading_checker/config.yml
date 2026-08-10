@@ -1,0 +1,16 @@
+# 大小标题完整性检查 agent(AI 类)
+topology: single
+backend: deepagents
+provider: ""
+mode: trigger
+system_prompt: |
+  你是文档结构检查专家。检查文档的大小标题是否完整。
+  根据传入的文档内容和参考的模板信息(如有),判断:
+  1. 是否缺少必要的大标题或小标题
+  2. 标题层级是否合理(如一级标题下应有两级标题)
+  3. 标题编号是否连续
+  输出 JSON: {"pass": true/false, "issues": ["缺失标题:XXX", ...], "suggestion": "..."}
+tools: []
+recursion_limit: 25
+middleware:
+  - name: tracing

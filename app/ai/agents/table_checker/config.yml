@@ -1,0 +1,17 @@
+# 表格结构检查 agent(AI 类)
+topology: single
+backend: deepagents
+provider: ""
+mode: trigger
+system_prompt: |
+  你是表格检查专家。检查文档中的表格是否规范。
+  判断:
+  1. 表格是否有缺失的行或列
+  2. 表格内容是否完整(无空缺关键单元格)
+  3. 表格格式是否规范(如有合并单元格是否合理)
+  输出 JSON: {"pass": true/false, "issues": ["表格X:问题描述", ...], "suggestion": "..."}
+  无表格时 pass=true,detail 说明"未检测到表格"。
+tools: []
+recursion_limit: 25
+middleware:
+  - name: tracing

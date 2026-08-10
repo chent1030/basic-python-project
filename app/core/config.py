@@ -326,6 +326,36 @@ class AgentsConfig(BaseModel):
     external_memory: ExternalMemoryConfig = Field(default_factory=ExternalMemoryConfig)
 
 
+# ---------------------------------------------------------------------
+# MinerU OCR 服务配置
+# ---------------------------------------------------------------------
+class MineruConfig(BaseModel):
+    """MinerU OCR HTTP 服务配置。
+
+    MinerU 部署为独立 HTTP 服务,doc_review service 把文件 POST 过去拿 OCR 结果。
+    不配(url 空)时,OCR 工具会报错提示未配置。
+    """
+
+    url: str = ""                  # MinerU OCR API 地址,如 http://mineru:8000/ocr
+    timeout: float = 120.0         # OCR 耗时较长,默认 120s
+    api_key: str = ""              # 若 MinerU 需认证
+
+
+# ---------------------------------------------------------------------
+# 文档智能审核配置
+# ---------------------------------------------------------------------
+class DocReviewConfig(BaseModel):
+    """文档审核功能配置。
+
+    doc_review service 编排:OCR → 并行检查(规则+AI) → 汇总报告。
+    外部系统传入 entity(业务数据,比对基准)+ url(文档地址)。
+    """
+
+    enabled: bool = True
+    callback_timeout: float = 30.0    # 审核完成后回调外部系统的超时
+    check_timeout: float = 180.0      # 单项检查(agent 调用)的超时
+
+
 class Settings(BaseModel):
     app: AppConfig = Field(default_factory=AppConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
@@ -338,6 +368,8 @@ class Settings(BaseModel):
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     alembic: AlembicConfig = Field(default_factory=AlembicConfig)
     agents: AgentsConfig = Field(default_factory=AgentsConfig)
+    mineru: MineruConfig = Field(default_factory=MineruConfig)
+    doc_review: DocReviewConfig = Field(default_factory=DocReviewConfig)
 
 
 # ---------- YAML deep merge ---------------------------------------------------
