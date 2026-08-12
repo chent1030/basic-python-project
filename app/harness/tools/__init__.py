@@ -62,4 +62,32 @@ def all_tools() -> dict[str, ToolDef]:
     return dict(_REGISTRY)
 
 
-__all__ = ["tool", "ToolDef", "resolve_tools", "get_tool", "all_tools"]
+def discover_tools() -> None:
+    """自动发现 tools/ 下的工具模块（import 触发 @tool 注册）。
+
+    仿 scheduler._scan_tasks_package：扫描本包下所有子模块。
+    """
+    import importlib
+    import pkgutil
+
+    pkg = importlib.import_module("app.harness.tools")
+    pkg_path = getattr(pkg, "__path__", None)
+    if not pkg_path:
+        return
+    for _finder, mod_name, _is_pkg in pkgutil.iter_modules(pkg_path):
+        if mod_name == "__init__":
+            continue
+        try:
+            importlib.import_module(f"app.harness.tools.{mod_name}")
+        except Exception:
+            import logging
+
+            logging.getLogger("app.harness.tools").exception(
+                "导入工具模块失败: %s", mod_name
+            )
+
+
+__all__ = [
+    "tool", "ToolDef", "resolve_tools", "get_tool", "all_tools",
+    "discover_tools",
+]

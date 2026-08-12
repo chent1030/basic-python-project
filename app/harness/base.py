@@ -134,10 +134,12 @@ class BaseAgent:
         return await backend.invoke(ctx)
 
     def _get_backend(self):
-        """惰性构建后端对象(首次用时建,缓存)。"""
+        """惰性构建后端对象(首次用时建,缓存)。同时确保工具已发现。"""
         if self._backend_obj is None:
             from app.harness.backends import build_backend
+            from app.harness.tools import discover_tools
 
+            discover_tools()  # 首次用时扫描工具模块(触发 @tool 注册)
             self._backend_obj = build_backend(self)
         return self._backend_obj
 
