@@ -347,13 +347,16 @@ class MineruConfig(BaseModel):
 class DocReviewConfig(BaseModel):
     """文档审核功能配置。
 
-    doc_review service 编排:OCR → 并行检查(规则+AI) → 汇总报告。
+    harness pipeline 编排:预处理 → OCR → 章节提取 → 并行检查 → 汇总报告。
     外部系统传入 entity(业务数据,比对基准)+ url(文档地址)。
     """
 
     enabled: bool = True
-    callback_timeout: float = 30.0    # 审核完成后回调外部系统的超时
-    check_timeout: float = 180.0      # 单项检查(agent 调用)的超时
+    check_timeout: float = 180.0      # 单项检查(LLM 调用)的超时
+    # 图片预处理参数(harness preprocess 层)
+    enlarge_ratio: int = 8            # 图片放大倍数
+    split_count: int = 4              # 长图分割份数
+    long_image_threshold: int = 2000  # 高度超过此值视为长图(像素)
 
 
 class Settings(BaseModel):

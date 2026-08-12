@@ -35,6 +35,8 @@ dependencies = [
     "deepagents>=0.6.12",     # 单 agent 深度任务 + subagent 委派(LangChain/LangGraph)
     "agentscope>=2.0.5",      # 多 agent 编排(顺序/并行/协作对话)
     "pgvector>=0.3.0",        # 持久记忆向量库(独立于业务库,与业务数据隔离)
+    # Harness 框架(文件预处理)
+    "Pillow>=10.0.0",         # 图片分割/放大(预处理层)
 ]
 
 [project.optional-dependencies]
