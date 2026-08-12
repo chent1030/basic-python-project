@@ -43,10 +43,15 @@ class BaseSubagentAgent(BaseAgent):
                 msgs.append(HumanMessage(content=m["content"]))
         agent = create_deep_agent(
             model=chat_model, tools=main_tools,
-            system_prompt=self.system_prompt or "You are a coordinator. Delegate subtasks as needed.",
+            system_prompt=(
+                self.system_prompt or "You are a coordinator. Delegate subtasks as needed."
+            ),
             subagents=subs,
         )
-        result = await agent.ainvoke({"messages": msgs}, config={"recursion_limit": self.recursion_limit})
+        result = await agent.ainvoke(
+            {"messages": msgs},
+            config={"recursion_limit": self.recursion_limit},
+        )
         from app.harness.backends.deepagents_backend import _extract_output
         text, _ = _extract_output(result)
         return AgentResult(output=text, extra={"topology": "subagent"})

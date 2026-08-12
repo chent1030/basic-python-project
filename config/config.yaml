@@ -171,3 +171,9 @@ doc_review:
   enabled: true
   callback_timeout: 30.0           # 审核完成后回调外部系统的超时
   check_timeout: 180.0             # 单项检查(agent 调用)的超时
+
+# ---------------------------------------------------------------------
+# Harness 框架 —— 会话记忆存储数据源
+# ---------------------------------------------------------------------
+harness:
+  session_datasource: "postgres_primary"   # session_memory 中间件存历史消息的数据源

@@ -25,8 +25,12 @@ class SessionMemoryMiddleware(MiddlewareBase):
             return result
         try:
             from app.harness.memory.session import session_store
-            await session_store.append_message(ctx.agent_name, ctx.session_id, "user", ctx.last_user_message)
-            await session_store.append_message(ctx.agent_name, ctx.session_id, "assistant", result.output)
+            await session_store.append_message(
+                ctx.agent_name, ctx.session_id, "user", ctx.last_user_message
+            )
+            await session_store.append_message(
+                ctx.agent_name, ctx.session_id, "assistant", result.output
+            )
         except Exception:
             pass
         return result

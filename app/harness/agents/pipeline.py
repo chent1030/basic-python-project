@@ -35,11 +35,18 @@ class BasePipelineAgent(BaseAgent):
                     outputs.append((n, f"[ERROR] {r}" if isinstance(r, Exception) else r.output))
                 merged = get_aggregator(step.aggregator)(outputs)
                 current = merged
-                trace.append({"step": step.name or f"parallel_{i}", "kind": "parallel", "outputs": outputs})
+                trace.append({
+                    "step": step.name or f"parallel_{i}",
+                    "kind": "parallel",
+                    "outputs": outputs,
+                })
             elif step.run:
                 result = await self._run_member(step.run, step_input, ctx)
                 current = result.output
                 trace.append({"step": step.name or step.run.__name__, "kind": "single"})
             if step.name:
                 step_outputs[step.name] = current
-        return AgentResult(output=current, extra={"topology": "pipeline", "steps": trace, "step_outputs": step_outputs})
+        return AgentResult(
+            output=current,
+            extra={"topology": "pipeline", "steps": trace, "step_outputs": step_outputs},
+        )

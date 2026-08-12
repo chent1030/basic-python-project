@@ -23,9 +23,16 @@ class SummarizationMiddleware(MiddlewareBase):
 
             from app.services.llm import llm
             history = "\n".join(f"{m['role']}: {m['content']}" for m in to_summarize)
-            summary = await llm.invoke([HumanMessage(content=f"摘要以下对话:\n{history}")], provider=agent.provider or None)
+            summary = await llm.invoke(
+                [HumanMessage(content=f"摘要以下对话:\n{history}")],
+                provider=agent.provider or None,
+            )
             system_msgs = [m for m in ctx.messages if m.get("role") == "system"]
-            ctx.messages = system_msgs + [{"role": "system", "content": f"[历史摘要]\n{summary}"}] + recent
+            ctx.messages = (
+                system_msgs
+                + [{"role": "system", "content": f"[历史摘要]\n{summary}"}]
+                + recent
+            )
         except Exception:
             pass
         return ctx

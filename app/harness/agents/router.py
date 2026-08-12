@@ -12,7 +12,10 @@ class BaseRouterAgent(BaseAgent):
 
         from app.services.llm import llm
         intents = list(self.routes.keys())
-        prompt = f"把消息分类到这些意图之一,只输出意图名: {', '.join(intents)}\n消息: {message}\n意图:"
+        prompt = (
+            f"把消息分类到这些意图之一,只输出意图名: {', '.join(intents)}\n"
+            f"消息: {message}\n意图:"
+        )
         text = await llm.invoke([HumanMessage(content=prompt)], provider=self.provider or None)
         text = text.strip().lower()
         for intent in intents:

@@ -14,13 +14,20 @@ class BasePlanExecuteAgent(BaseAgent):
     max_steps: int = 10
 
     async def _execute_topology(self, ctx):
-        plan_prompt = f'把任务拆解成步骤。只输出 JSON: {{"steps": ["步骤1","步骤2"]}}\n任务: {ctx.last_user_message}'
+        plan_prompt = (
+            f'把任务拆解成步骤。只输出 JSON: {{"steps": ["步骤1","步骤2"]}}\n'
+            f'任务: {ctx.last_user_message}'
+        )
         plan_result = await self._run_member(self.planner, plan_prompt, ctx)
         steps = self._parse_steps(plan_result.output)
         exec_cls = self.executor or self.planner
         current = ctx.last_user_message
         for i, step in enumerate(steps, 1):
-            result = await self._run_member(exec_cls, f"执行步骤 {i}/{len(steps)}: {step}\n上下文: {current}", ctx)
+            result = await self._run_member(
+                exec_cls,
+                f"执行步骤 {i}/{len(steps)}: {step}\n上下文: {current}",
+                ctx,
+            )
             current = result.output
         return AgentResult(output=current, extra={"topology": "plan_execute", "plan": steps})
 

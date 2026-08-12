@@ -1,7 +1,6 @@
 """中间件基类 + Pipeline(洋葱模型)。"""
 from __future__ import annotations
 
-import abc
 from typing import TYPE_CHECKING, Any
 
 from app.harness.context import AgentResult, AgentRunContext
@@ -10,7 +9,7 @@ if TYPE_CHECKING:
     from app.harness.base import BaseAgent
 
 
-class MiddlewareBase(abc.ABC):
+class MiddlewareBase:
     """中间件基类。before_invoke 在 agent 执行前,after_invoke 在后。"""
 
     name: str = ""

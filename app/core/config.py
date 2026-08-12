@@ -270,6 +270,18 @@ class AlembicConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------
+# Harness 框架配置(session 记忆存哪个数据源)
+# ---------------------------------------------------------------------
+class HarnessConfig(BaseModel):
+    """Harness 框架配置。
+
+    session_datasource: 会话记忆中间件存历史消息的数据源。
+    """
+
+    session_datasource: str = "postgres_primary"
+
+
+# ---------------------------------------------------------------------
 # MinerU OCR 服务配置
 # ---------------------------------------------------------------------
 class MineruConfig(BaseModel):
@@ -315,6 +327,7 @@ class Settings(BaseModel):
     alembic: AlembicConfig = Field(default_factory=AlembicConfig)
     mineru: MineruConfig = Field(default_factory=MineruConfig)
     doc_review: DocReviewConfig = Field(default_factory=DocReviewConfig)
+    harness: HarnessConfig = Field(default_factory=HarnessConfig)
 
 
 # ---------- YAML deep merge ---------------------------------------------------

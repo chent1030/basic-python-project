@@ -15,8 +15,15 @@ class BaseConversationalAgent(BaseAgent):
         transcript = []
         for r in range(self.rounds):
             for m in self.members:
-                prompt = message if r == 0 and m == self.members[0] else f"讨论话题: {message}\n上一条: {last_output}\n请给出你的观点。"
+                prompt = message if r == 0 and m == self.members[0] else (
+                    f"讨论话题: {message}\n"
+                    f"上一条: {last_output}\n"
+                    f"请给出你的观点。"
+                )
                 result = await self._run_member(m, prompt, ctx)
                 last_output = result.output
                 transcript.append((m.name or m.__name__, last_output))
-        return AgentResult(output=last_output, extra={"topology": "conversational", "transcript": transcript})
+        return AgentResult(
+            output=last_output,
+            extra={"topology": "conversational", "transcript": transcript},
+        )

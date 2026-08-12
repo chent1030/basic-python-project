@@ -19,6 +19,9 @@ class TracingMiddleware(MiddlewareBase):
     async def after_invoke(self, ctx, agent, result):
         start = ctx.extra.get("_tracing_start")
         dur = int((time.monotonic() - start) * 1000) if start else -1
-        ctx.logger.info("[tracing] after agent=%s duration=%dms output=%dchars", ctx.agent_name, dur, len(result.output))
+        ctx.logger.info(
+            "[tracing] after agent=%s duration=%dms output=%dchars",
+            ctx.agent_name, dur, len(result.output),
+        )
         result.extra["tracing"] = {"duration_ms": dur, "output_chars": len(result.output)}
         return result

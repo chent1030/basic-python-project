@@ -62,7 +62,9 @@ async def run_doc_review(entity: dict[str, Any]) -> dict[str, Any]:
                 "error": str(e),
             })
 
-    all_pass = all(r.get("overall_pass", False) for r in results if r.get("overall_pass") is not None)
+    all_pass = all(
+        r.get("overall_pass", False) for r in results if r.get("overall_pass") is not None
+    )
     return {
         "status": "completed",
         "overall_pass": all_pass,

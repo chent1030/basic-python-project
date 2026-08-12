@@ -6,7 +6,9 @@ from app.core.datasource import datasources
 
 
 def _factory():
-    return datasources.get_session_factory(settings.agents.session_datasource if hasattr(settings, 'agents') else "postgres_primary")
+    return datasources.get_session_factory(
+        settings.harness.session_datasource
+    )
 
 class SessionStore:
     async def load_history(self, agent_name, session_id, *, limit=50):
@@ -15,7 +17,15 @@ class SessionStore:
 
             from app.models.agent_session import AgentSession
             async with _factory()() as session:
-                stmt = select(AgentSession).where(AgentSession.agent_name == agent_name, AgentSession.session_id == session_id).order_by(AgentSession.id.desc()).limit(limit)
+                stmt = (
+                    select(AgentSession)
+                    .where(
+                        AgentSession.agent_name == agent_name,
+                        AgentSession.session_id == session_id,
+                    )
+                    .order_by(AgentSession.id.desc())
+                    .limit(limit)
+                )
                 rows = list((await session.execute(stmt)).scalars().all())
             rows.reverse()
             return [{"role": r.role, "content": r.content} for r in rows]
@@ -25,7 +35,12 @@ class SessionStore:
         try:
             from app.models.agent_session import AgentSession
             async with _factory()() as session:
-                session.add(AgentSession(agent_name=agent_name, session_id=session_id, role=role, content=content))
+                session.add(AgentSession(
+                    agent_name=agent_name,
+                    session_id=session_id,
+                    role=role,
+                    content=content,
+                ))
                 await session.commit()
         except Exception:
             pass
