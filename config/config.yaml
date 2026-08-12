@@ -155,57 +155,6 @@ alembic:
   default_datasource: "postgres_primary"
 
 # ---------------------------------------------------------------------
-# AI Agent 框架 —— 集成 deepagents + agentscope,支持 6 种拓扑 + 4 类记忆
-#
-# agent 列表是去中心化的:每个 agent 一个独立目录,在 agents_dir 下:
-#   app/ai/agents/<name>/config.yml   声明拓扑/后端/provider/中间件等
-#   app/ai/agents/<name>/tools.py     (可选)该 agent 专属工具
-# 加/删 agent = 加/删一个目录,无需改本文件。
-#
-# 本配置只放全局开关 + 共享存储位置 + 中间件后端配置。
-# 模型 provider 复用上面的 llm.providers,不重复配置。
-#
-# 拓扑(topology,在每个 agent 的 config.yml 里声明):
-#   single          单 agent(deepagents 或 agentscope)
-#   subagent        主 agent 委派子任务(deepagents subagents + task 工具)
-#   parallel        多 agent 并行跑同输入(agentscope FanoutPipeline)
-#   sequential      流水线,前者输出喂后者(agentscope SequentialPipeline)
-#   conversational  多 agent 群聊讨论(agentscope MsgHub)
-#   router          supervisor 按意图分发(自建)
-#
-# 记忆(4 类,各自独立中间件):
-#   context     上下文记忆 —— 依赖后端原生(deepagents checkpointer / agentscope memory)
-#   session     会话记忆 —— agent_sessions 表(业务库)
-#   persistent  持久记忆 —— 独立向量库(跨会话事实/偏好)
-#   external    外部记忆 —— 外部 API 召回(第一期)
-# ---------------------------------------------------------------------
-agents:
-  enabled: true
-  agents_dir: "app/ai/agents"
-  tools_dir: "app/ai/tools"
-  session_datasource: "postgres_primary"   # 会话记忆存哪个数据源
-  session_table: "agent_sessions"
-  runs_table: "agent_runs"                 # 运行记录表(树状,parent_run_id+depth)
-
-  # 持久记忆 —— 独立向量库(与业务库隔离)
-  # 在 local.yaml 里配真实数据源(独立 PG + pgvector 扩展)
-  persistent_memory:
-    enabled: false                         # 默认关闭;开启后中间件才生效
-    datasource: ""                         # 向量库数据源名(datasources 里的 key)
-    table: "agent_memories"
-    embedding_provider: ""                 # 用哪个 llm.provider 出 embedding
-    embedding_model: ""
-    top_k: 5
-
-  # 外部记忆 —— 外部 API 召回
-  external_memory:
-    enabled: false
-    url: ""
-    method: "POST"
-    headers: {}
-    timeout: 30.0
-
-# ---------------------------------------------------------------------
 # MinerU OCR 服务 —— 文档审核用(OCR 识别)
 # MinerU 部署为独立 HTTP 服务,doc_review 把文件 POST 过去拿 OCR 结果。
 # 在 local.yaml 配真实地址。

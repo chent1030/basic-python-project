@@ -1,8 +1,0 @@
-# 内容流水线(deepagents 版 sequential) —— 摘要->成稿,成员用 deepagents 后端
-topology: sequential
-mode: trigger
-members:
-  - summarizer_da           # deepagents 版摘要员
-  - writer_da               # deepagents 版写手
-middleware:
-  - name: tracing

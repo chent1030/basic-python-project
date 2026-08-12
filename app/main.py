@@ -14,7 +14,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.ai.gateway import agent_gateway
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.datasource import datasources
@@ -37,18 +36,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     log.info("Opening datasources: %s", datasources.names() if datasources.names() else "(none)")
     await datasources.startup()
     await llm.startup()
-    await agent_gateway.startup()
     await http_client.startup()
     await scheduler_service.startup()
-    log.info("All datasources, LLM, agent gateway, HTTP client, scheduler ready.")
+    log.info("All datasources, LLM, HTTP client, scheduler ready.")
 
     try:
         yield
     finally:
-        log.info("Closing scheduler, HTTP client, agent gateway, LLM, datasources...")
+        log.info("Closing scheduler, HTTP client, LLM, datasources...")
         await scheduler_service.shutdown()
         await http_client.shutdown()
-        await agent_gateway.shutdown()
         await llm.shutdown()
         await datasources.shutdown()
         log.info("Shutdown complete.")

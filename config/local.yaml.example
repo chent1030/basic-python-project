@@ -102,30 +102,3 @@ llm:
       base_url: "https://api.openai.com/v1"
       api_key: "enc:REPLACE_WITH_ENCRYPTED_API_KEY"
       model: "gpt-4o-mini"
-
-# ── AI Agent 框架 ──────────────────────────────────────────────────
-# agent 列表去中心化:每个 agent 在 app/ai/agents/<name>/config.yml 里声明。
-# 本处只覆盖全局设置 + 中间件后端(持久记忆向量库 / 外部记忆 API)。
-# 不配也能跑 —— 只是 persistent_memory / external_memory 中间件会退化为 no-op。
-agents:
-  enabled: true
-  session_datasource: "postgres_primary"   # 会话记忆 + 运行记录存这里
-
-  # 持久记忆 —— 独立向量库(与业务库隔离,需先在该库建 pgvector 扩展:
-  #   CREATE EXTENSION IF NOT EXISTS vector;)
-  # 先在 datasources 下配一个独立 PG(如 postgres_vector),再在这里指向它。
-  persistent_memory:
-    enabled: false                          # 改 true 启用
-    datasource: "postgres_vector"           # 独立向量库数据源名
-    embedding_provider: "openai"            # 用哪个 llm.provider 出 embedding
-    embedding_model: "text-embedding-3-small"
-    top_k: 5
-
-  # 外部记忆 —— 外部知识 API(中间件调用前 POST query,取回知识注入上下文)
-  external_memory:
-    enabled: false
-    url: "https://your-knowledge-api.example.com/search"
-    method: "POST"
-    headers:
-      Authorization: "Bearer YOUR_TOKEN"
-    timeout: 30.0

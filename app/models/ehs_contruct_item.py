@@ -1,4 +1,4 @@
-from typing import Optional, List
+
 from pydantic import BaseModel
 
 
@@ -11,8 +11,8 @@ class WorkRegion(BaseModel):
     regionName: str
     regionName1: str
     regionName2: str
-    regionName3: Optional[str] = None
-    regionName4: Optional[str] = None
+    regionName3: str | None = None
+    regionName4: str | None = None
     detailLocation: str = ""
 
 
@@ -27,8 +27,8 @@ class ReceptionInfo(BaseModel):
     receiverName: str
     receiverPhone: str
     receiverDepartment: str
-    receiverDirector: Optional[str] = None
-    receptionDeptDirectorCode: Optional[str] = None
+    receiverDirector: str | None = None
+    receptionDeptDirectorCode: str | None = None
     receptionPersonnelDirectSuperiorName: str
     receptionPersonnelDirectsuperiorcode: str
     receptionPersonnelManagerName:str
@@ -49,7 +49,7 @@ class Guardian(BaseModel):
 
 
 class Safetyofficer(BaseModel): 
-    safetyofficerCertNo: Optional[str] = None
+    safetyofficerCertNo: str | None = None
     certExpiryDate:str
     certAttachments: list[FileInfo] = []
 
@@ -61,16 +61,16 @@ class Operator(BaseModel):
     certType: str
     certNo:str
     certExpireDate: str
-    operatorCertAttachments: Optional[List[FileInfo]] = None
+    operatorCertAttachments: list[FileInfo] | None = None
     hasWorkInsurance: bool
-    threeLevelSafetyEducationProof: Optional[List[FileInfo]] = None
+    threeLevelSafetyEducationProof: list[FileInfo] | None = None
 
 
 class WorkInfo(BaseModel):
     workType: str
-    affectedArea: Optional[str] = None
-    riskIdentification: Optional[List[str]] = None
-    involvedAreaType: Optional[List[str]] = None
+    affectedArea: str | None = None
+    riskIdentification: list[str] | None = None
+    involvedAreaType: list[str] | None = None
     riskLevel: str
     workDate: str
 

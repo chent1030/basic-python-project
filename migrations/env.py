@@ -89,20 +89,6 @@ log.info(
 # --------------------------------------------------------------------------
 # offline 模式:生成 SQL 脚本,不连数据库
 # --------------------------------------------------------------------------
-def _include_object(object, name, type_, reflected, compare_to):
-    """过滤 agent_memories 表:它依赖 pgvector 扩展,属于独立的持久记忆向量库。
-
-    只有当本次迁移的目标数据源正是配置的 persistent_memory.datasource 时,
-    才创建/比较 agent_memories 表;否则跳过(避免在未装 pgvector 的业务库上失败)。
-    这样默认对 postgres_primary 跑迁移时不会碰 agent_memories。
-    """
-    if type_ == "table" and name == "agent_memories":
-        pm_ds = settings.agents.persistent_memory.datasource
-        target_ds = _resolve_target_datasource()
-        return bool(pm_ds) and pm_ds == target_ds
-    return True
-
-
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
@@ -111,14 +97,13 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
-        include_object=_include_object,
     )
     with context.begin_transaction():
         context.run_migrations()
 
 
 # --------------------------------------------------------------------------
-# online 模式:连数据库执行迁移
+# online 模式:连数据库执行
 # --------------------------------------------------------------------------
 def run_migrations_online() -> None:
     connectable = engine_from_config(
@@ -131,7 +116,6 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
-            include_object=_include_object,
         )
         with context.begin_transaction():
             context.run_migrations()

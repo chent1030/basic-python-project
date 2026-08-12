@@ -270,63 +270,6 @@ class AlembicConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------
-# AI Agent 框架 —— 全局配置(单 agent 配置在 app/ai/agents/<name>/config.yml)
-# ---------------------------------------------------------------------
-class PersistentMemoryConfig(BaseModel):
-    """持久记忆(跨会话事实/偏好)—— 独立向量库,与业务库隔离。
-
-    与会话记忆(session,走业务库)分开:持久记忆是长期事实,需要向量召回,
-    存在独立的向量库数据源里,避免污染业务表。
-    未启用(enabled=false)时,persistent_memory 中间件退化为 no-op。
-    """
-
-    enabled: bool = False
-    datasource: str = ""              # 向量库数据源名(在 datasources 里配,通常是独立 PG+pgvector)
-    table: str = "agent_memories"
-    embedding_provider: str = ""      # 用哪个 LLM provider 出 embedding(复用 llm.providers)
-    embedding_model: str = ""         # embedding 模型名
-    top_k: int = 5                    # 召回条数
-
-
-class ExternalMemoryConfig(BaseModel):
-    """外部记忆(系统外知识源)—— 第一期只支持外部 API 召回。
-
-    中间件在 agent 调用前 POST 该 url(query 放 body),取回的知识片段注入上下文。
-    pgvector 知识库 / 业务 DB 查询等其它外部记忆形式留接口后续扩展。
-    未启用(enabled=false)时,external_memory 中间件退化为 no-op。
-    """
-
-    enabled: bool = False
-    url: str = ""
-    method: str = "POST"              # HTTP 方法
-    headers: dict[str, str] = Field(default_factory=dict)
-    timeout: float = 30.0
-
-
-class AgentsConfig(BaseModel):
-    """AI Agent 框架全局配置。
-
-    agent 列表是去中心化的:每个 agent 一个独立目录 app/ai/agents/<name>/,
-    内含 config.yml 声明该 agent 的拓扑/后端/中间件等。
-    本配置只放全局开关 + 共享存储位置 + 中间件后端配置。
-
-    - agents_dir:   agent 配置目录(registry 扫描入口)
-    - tools_dir:    全局共享工具目录(每工具一文件,自动发现)
-    - session_datasource: 会话记忆存哪个数据源(业务库)
-    - runs_table:   运行记录表(每次 trigger/chat 都写,树状 parent_run_id)
-    """
-
-    enabled: bool = True
-    agents_dir: str = "app/ai/agents"
-    tools_dir: str = "app/ai/tools"
-    session_datasource: str = "postgres_primary"
-    session_table: str = "agent_sessions"
-    runs_table: str = "agent_runs"
-    persistent_memory: PersistentMemoryConfig = Field(default_factory=PersistentMemoryConfig)
-    external_memory: ExternalMemoryConfig = Field(default_factory=ExternalMemoryConfig)
-
-
-# ---------------------------------------------------------------------
 # MinerU OCR 服务配置
 # ---------------------------------------------------------------------
 class MineruConfig(BaseModel):
@@ -370,7 +313,6 @@ class Settings(BaseModel):
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     alembic: AlembicConfig = Field(default_factory=AlembicConfig)
-    agents: AgentsConfig = Field(default_factory=AgentsConfig)
     mineru: MineruConfig = Field(default_factory=MineruConfig)
     doc_review: DocReviewConfig = Field(default_factory=DocReviewConfig)
 
