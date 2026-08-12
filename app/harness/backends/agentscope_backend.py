@@ -66,7 +66,7 @@ class AgentScopeBackend(BaseBackend):
     def _ensure_agent(self):
         if self._agent_obj is None:
             from agentscope.agent import Agent
-            from agentscope.tool import FunctionTool, Toolkit
+            from agentscope.tool import Toolkit
 
             model = self._build_model()
             toolkit = None

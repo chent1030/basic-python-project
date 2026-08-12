@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
-from app.harness.context import AgentResult, AgentRunContext
+from app.harness.context import AgentRunContext
 
 if TYPE_CHECKING:
     from app.harness.base import BaseAgent

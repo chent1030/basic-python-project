@@ -99,7 +99,7 @@ class BaseAgent:
             ctx.logger.info("agent 完成 name=%s duration=%dms", self.name, dur)
             result.extra.setdefault("duration_ms", dur)
             return result
-        except Exception as e:
+        except Exception:
             ctx.logger.exception("agent 失败 name=%s", self.name)
             raise
 

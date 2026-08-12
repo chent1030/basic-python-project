@@ -5,10 +5,10 @@
 - 配置=类属性(纯 Python,无 config.yml)
 - agent 间通讯:共享黑板 + 消息传递 + 事件总线
 - 3 个后端可切换:deepagents / agentscope / llm
-- 7 个中间件(洋葱模型) + HITL + 4 类记忆 + 工具 + 聚合器
+- 7 个中间件(洋葱模型) + HITL + 记忆 + 工具 + 聚合器
 
 业务用法:
-    from app.harness import BaseSingleAgent
+    from app.harness import BaseSingleAgent, BasePipelineAgent, PipelineStep, tool
 
     class TypoChecker(BaseSingleAgent):
         name = "typo"
@@ -18,21 +18,59 @@
 
     agent = TypoChecker()
     result = await agent.run("检查这段文字的错别字")
-
-注意:本文件随模块完成度逐步补充导出。以下为已完成的部分。
 """
 from __future__ import annotations
 
-# 已完成的底层
+# 拓扑基类
+from app.harness.agents import (
+    BaseConversationalAgent,
+    BaseParallelAgent,
+    BasePipelineAgent,
+    BasePlanExecuteAgent,
+    BaseReflectionAgent,
+    BaseRouterAgent,
+    BaseSequentialAgent,
+    BaseSingleAgent,
+    BaseSubagentAgent,
+    PipelineStep,
+)
+
+# 工具 & 聚合器
+from app.harness.aggregators import aggregator
+
+# 基类
 from app.harness.base import BaseAgent
+
+# 通讯
+from app.harness.communication import Blackboard, EventBus, MessageBus
+
+# 数据结构
 from app.harness.context import AgentResult, AgentRunContext, Message
+from app.harness.tools import tool
 
 __all__ = [
-    # 基类(待补充拓扑基类)
+    # 底层基类
     "BaseAgent",
+    # 拓扑基类
+    "BaseSingleAgent",
+    "BaseParallelAgent",
+    "BaseSequentialAgent",
+    "BasePipelineAgent",
+    "PipelineStep",
+    "BaseConversationalAgent",
+    "BaseRouterAgent",
+    "BasePlanExecuteAgent",
+    "BaseReflectionAgent",
+    "BaseSubagentAgent",
     # 数据结构
     "AgentRunContext",
     "AgentResult",
     "Message",
-    # 拓扑基类/工具/聚合器/通讯 → 待后续模块完成后补充导出
+    # 工具 & 聚合器
+    "tool",
+    "aggregator",
+    # 通讯
+    "Blackboard",
+    "MessageBus",
+    "EventBus",
 ]

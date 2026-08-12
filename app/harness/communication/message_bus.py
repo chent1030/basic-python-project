@@ -9,7 +9,7 @@ import asyncio
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.harness.base import BaseAgent
