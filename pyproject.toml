@@ -33,6 +33,9 @@ dependencies = [
     "jinja2>=3.1.0",          # prompt template rendering (optional but recommended)
     # Harness 框架(文件预处理)
     "Pillow>=10.0.0",         # 图片分割/放大(预处理层)
+    # Harness 后端(agent 循环)
+    "deepagents>=0.6.12",     # 工具循环/规划/文件系统/skills
+    "agentscope>=2.0.5",      # ReAct 循环/skills
 ]
 
 [project.optional-dependencies]

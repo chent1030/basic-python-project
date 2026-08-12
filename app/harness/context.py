@@ -1,71 +1,67 @@
-"""Harness 框架 —— 统一 Context 对象 + CheckResult 契约。
+"""Harness 核心数据结构:AgentRunContext / AgentResult / Message。
 
-Context 贯穿整个 Pipeline,每个 Stage 读/写它(不只是文本,还能传图片/结构化数据)。
-CheckResult 是所有检查项的统一输出格式(汇总不用猜格式)。
+AgentRunContext 贯穿一次 agent 运行,含消息 + 通讯设施(黑板/消息/事件)。
+AgentResult 是统一的输出格式。
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.harness.communication import Blackboard, EventBus, MessageBus
 
-@dataclass
-class CheckResult:
-    """检查结果的统一契约。所有检查项都返回这个。
-
-    severity: high(必须改) / medium(建议改) / low(可选) / info(信息)
-    """
-
-    name: str
-    passed: bool
-    severity: str = "info"
-    issues: list[str] = field(default_factory=list)
-    suggestion: str = ""
-    detail: str = ""
-    raw: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "name": self.name,
-            "passed": self.passed,
-            "severity": self.severity,
-            "issues": self.issues,
-            "suggestion": self.suggestion,
-            "detail": self.detail,
-        }
+# 消息用最通用的 dict 表示:{"role": "system"|"user"|"assistant", "content": str}
+Message = dict[str, str]
 
 
 @dataclass
-class HarnessContext:
-    """贯穿整个 Pipeline 的上下文,每个 Stage 读/写它。
+class AgentResult:
+    """agent 运行结果的统一格式。"""
 
-    生命周期:Pipeline 创建 → preprocess 填充 file_type/raw_file/processed_images
-    → ocr 填充 ocr_text/ocr_images → extract 填充 sections
-    → checks 填充 check_results → report 填充 report。
+    output: str = ""
+    tokens: int | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class AgentRunContext:
+    """一次 agent 运行的上下文。含消息 + 通讯设施。
+
+    通讯设施由 Pipeline/Gateway 在 run() 时创建,注入到 Context,
+    同一 Pipeline 内所有 agent 共享(黑板/消息/事件)。
     """
 
-    # ---- 输入(外部传入)----
-    entity: dict[str, Any]           # 业务数据(比对基准:供应商/人员/项目等)
-    file_url: str                    # 原始文件 URL
+    agent_name: str = ""
+    messages: list[Message] = field(default_factory=list)
+    session_id: str | None = None
+    source: str = "api"                  # api | scheduler | internal
+    parent_run_id: str | None = None
+    depth: int = 0
+    user_id: str | None = None
+    run_id: str = ""
 
-    # ---- Stage 产出(逐步填充)----
-    file_type: str = ""              # image / docx / pdf(预处理判断)
-    raw_file: bytes = b""            # 下载的原始文件字节
-    processed_images: list[bytes] = field(default_factory=list)  # 预处理后图片(分割+放大)
-    ocr_text: str = ""               # OCR 结果(markdown)
-    ocr_images: list[str] = field(default_factory=list)  # OCR 返回的图片(URL/base64)
-    sections: dict[str, str] = field(default_factory=dict)  # 提取的章节
-    check_results: dict[str, CheckResult] = field(default_factory=dict)
-    report: dict[str, Any] = field(default_factory=dict)
+    # 通讯设施(框架注入,所有 agent 共享)
+    blackboard: Blackboard = field(default_factory=Blackboard)
+    message_bus: MessageBus = field(default_factory=MessageBus)
+    event_bus: EventBus = field(default_factory=EventBus)
 
-    # ---- 元信息 ----
-    pipeline_id: str = ""
-    metadata: dict[str, Any] = field(default_factory=dict)
+    # 元信息
+    logger: logging.Logger = field(default_factory=lambda: logging.getLogger("app.harness"))
+    extra: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if not self.pipeline_id:
-            self.pipeline_id = uuid.uuid4().hex
+        if not self.run_id:
+            self.run_id = uuid.uuid4().hex
+
+    @property
+    def last_user_message(self) -> str:
+        """最后一条 user 消息的文本。"""
+        for m in reversed(self.messages):
+            if m.get("role") == "user":
+                return m.get("content", "")
+        return ""
 
 
-__all__ = ["HarnessContext", "CheckResult"]
+__all__ = ["AgentRunContext", "AgentResult", "Message"]

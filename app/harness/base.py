@@ -1,123 +1,267 @@
-"""Harness 基类:BaseCheck(检查项) + BaseStage(流水线阶段)。
+"""BaseAgent —— 所有 agent 的底层基类。
 
-检查项:一文件一个,继承 BaseCheck,自动发现。声明需要哪些章节,run 里做判断。
-阶段:Pipeline 的一个步骤,读写 Context。
+业务继承拓扑基类(BaseSingleAgent / BaseParallelAgent 等),不直接继承此层。
+此层提供:声明式配置(类属性) + run() 主流程 + 后端调用 + 中间件 + HITL + 通讯 API。
+
+核心流程:
+    run(message) → 中间件 before → _execute_topology() → 中间件 after → 记录
+    HITL:require_confirmation=True 时首次返回 pending,confirm 后执行
 """
 from __future__ import annotations
 
-import abc
-import re
+import time
+from collections.abc import AsyncIterator
+from typing import Any
 
-from app.harness.context import CheckResult, HarnessContext
+from app.core.logging_config import get_logger
+from app.harness.context import AgentResult, AgentRunContext, Message
+
+log = get_logger("app.harness.base")
 
 
-class BaseCheck(abc.ABC):
-    """所有检查项的基类。一个文件定义一个检查项,自动发现。
+class BaseAgent:
+    """所有 agent 的底层基类。
 
-    子类需设:name / description / sections / check_type,并实现 run()。
-    加检查项 = 加一个 .py 文件定义子类 + 模块级 CHECK = XxxCheck()。
+    子类(拓扑基类)设类属性声明配置,实现 _execute_topology()。
+    业务代码继承拓扑基类(如 BaseSingleAgent),设类属性即可使用。
     """
 
+    # ============ 声明式配置(子类设类属性)============
     name: str = ""
-    description: str = ""
-    sections: list[str] = []        # 需要哪些章节:"full"/"cover"/"tail"/标题关键词
-    check_type: str = "ai"          # "ai"(调LLM) | "rule"(纯代码) | "hybrid"
+    backend: str = "deepagents"         # "deepagents" | "agentscope" | "llm"
+    provider: str = ""                  # LLM provider(空=默认)
+    system_prompt: str = ""
+    prompt_file: str = ""
+    tools: list[str] = []               # 工具名(@tool 注册的)
+    middleware: list[str] = []          # 中间件名(tracing/filter/session_memory...)
+    model: str | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    recursion_limit: int = 25
+    skills: list[str] = []
+    hitl_require_confirmation: bool = False
 
-    @abc.abstractmethod
-    async def run(self, ctx: HarnessContext) -> CheckResult:
-        """执行检查,返回 CheckResult。"""
-        raise NotImplementedError
+    # ============ 运行时状态(框架注入)============
+    _context: AgentRunContext | None = None
+    _backend_obj: Any = None             # 惰性构建的后端对象
 
-    def get_input(self, ctx: HarnessContext) -> str:
-        """从 ctx 取本检查需要的章节内容(根据 self.sections)。
+    # ============ 主流程 ============
+    async def run(
+        self,
+        message: str,
+        *,
+        session_id: str | None = None,
+        source: str = "api",
+        context: AgentRunContext | None = None,
+    ) -> AgentResult:
+        """核心执行流程。
 
-        sections 含 "full" 时返回全文;否则按章节名取(模糊匹配)。
+        业务代码调 agent.run("...") 触发。
+        框架自动处理:中间件洋葱 + HITL + 后端调用 + 运行记录。
         """
-        if not ctx.sections:
-            return ctx.ocr_text
-        return pick_sections(ctx.sections, self.sections)
-
-
-class BaseStage(abc.ABC):
-    """Pipeline 的一个阶段。读写 Context。"""
-
-    name: str = ""
-
-    @abc.abstractmethod
-    async def run(self, ctx: HarnessContext) -> HarnessContext:
-        """执行本阶段,修改并返回 ctx。"""
-        raise NotImplementedError
-
-
-# --------------------------------------------------------------------------
-# 章节提取/选取(从 OCR markdown 拆章节)
-# --------------------------------------------------------------------------
-def extract_sections(doc_content: str) -> dict[str, str]:
-    """从 OCR 文档(markdown)提取章节。
-
-    - cover:第一个标题前的内容(封面/抬头)
-    - 按标题拆:每个 # 标题到下一个标题为一段
-    - tail:末尾约 800 字符(签字盖章区)
-    """
-    sections: dict[str, str] = {}
-    lines = doc_content.split("\n")
-    heading_re = re.compile(r"^(#{1,6})\s+(.+)$")
-
-    current_title = "cover"
-    current_lines: list[str] = []
-    segments: list[tuple[str, list[str]]] = []
-
-    for line in lines:
-        m = heading_re.match(line)
-        if m:
-            if current_lines:
-                segments.append((current_title, current_lines))
-            current_title = m.group(2).strip()
-            current_lines = [line]
+        # 构造/复用 context
+        if context is not None:
+            ctx = context
         else:
-            current_lines.append(line)
-    if current_lines:
-        segments.append((current_title, current_lines))
+            ctx = AgentRunContext(
+                agent_name=self.name,
+                messages=self._build_messages(message),
+                session_id=session_id,
+                source=source,
+            )
+        self._context = ctx
+        ctx.logger.info("agent 开始 name=%s run_id=%s", self.name, ctx.run_id)
 
-    for title, seg_lines in segments:
-        text = "\n".join(seg_lines).strip()
-        sections[title] = text
+        # HITL:需要确认时首次返回 pending
+        if self.hitl_require_confirmation:
+            return AgentResult(
+                output="",
+                extra={
+                    "status": "awaiting_confirmation",
+                    "run_id": ctx.run_id,
+                    "agent": self.name,
+                },
+            )
 
-    # cover = 第一个标题前
-    if segments and segments[0][0] == "cover":
-        sections["cover"] = "\n".join(segments[0][1]).strip()
+        started = time.monotonic()
+        result = AgentResult()
+        try:
+            # 1. 中间件 before
+            ctx = await self._run_middleware_before(ctx)
 
-    # tail = 末尾
-    if len(doc_content) > 800:
-        sections["tail"] = doc_content[-800:]
-    elif segments:
-        sections["tail"] = "\n".join(segments[-1][1]).strip()
+            # 2. 拓扑执行(子类实现)
+            result = await self._execute_topology(ctx)
 
-    return sections
+            # 3. 中间件 after
+            result = await self._run_middleware_after(ctx, result)
+
+            dur = int((time.monotonic() - started) * 1000)
+            ctx.logger.info("agent 完成 name=%s duration=%dms", self.name, dur)
+            result.extra.setdefault("duration_ms", dur)
+            return result
+        except Exception as e:
+            ctx.logger.exception("agent 失败 name=%s", self.name)
+            raise
+
+    async def stream(self, message: str, **kwargs: Any) -> AsyncIterator[str]:
+        """流式输出(SSE)。默认实现:调后端 stream。"""
+        ctx = AgentRunContext(
+            agent_name=self.name,
+            messages=self._build_messages(message),
+        )
+        self._context = ctx
+        ctx = await self._run_middleware_before(ctx)
+        async for chunk in self._stream_backend(ctx):
+            yield chunk
+
+    # ============ 拓扑执行(子类实现)============
+    async def _execute_topology(self, ctx: AgentRunContext) -> AgentResult:
+        """执行拓扑特定逻辑。子类(拓扑基类)实现。"""
+        # BaseAgent 默认=single:直接调后端
+        text = await self._invoke_backend(ctx)
+        return AgentResult(output=text)
+
+    async def _stream_backend(self, ctx: AgentRunContext) -> AsyncIterator[str]:
+        """流式调后端。"""
+        backend = self._get_backend()
+        async for chunk in backend.stream(ctx):
+            yield chunk
+
+    # ============ 后端调用 ============
+    async def _invoke_backend(self, ctx: AgentRunContext) -> str:
+        """根据 self.backend 调对应后端(deepagents/agentscope/llm)。"""
+        backend = self._get_backend()
+        return await backend.invoke(ctx)
+
+    def _get_backend(self):
+        """惰性构建后端对象(首次用时建,缓存)。"""
+        if self._backend_obj is None:
+            from app.harness.backends import build_backend
+
+            self._backend_obj = build_backend(self)
+        return self._backend_obj
+
+    # ============ 中间件 ============
+    async def _run_middleware_before(self, ctx: AgentRunContext) -> AgentRunContext:
+        """中间件 before(洋葱:按声明顺序)。"""
+        from app.harness.middleware import get_pipeline
+
+        pipeline = get_pipeline()
+        for name in self.middleware:
+            mw = pipeline.get(name)
+            if mw is not None:
+                try:
+                    ctx = await mw.before_invoke(ctx, self)
+                except Exception:
+                    log.exception("中间件 before 失败 name=%s", name)
+        return ctx
+
+    async def _run_middleware_after(
+        self, ctx: AgentRunContext, result: AgentResult
+    ) -> AgentResult:
+        """中间件 after(洋葱:逆序)。"""
+        from app.harness.middleware import get_pipeline
+
+        pipeline = get_pipeline()
+        for name in reversed(self.middleware):
+            mw = pipeline.get(name)
+            if mw is not None:
+                try:
+                    result = await mw.after_invoke(ctx, self, result)
+                except Exception:
+                    log.exception("中间件 after 失败 name=%s", name)
+        return result
+
+    # ============ 通讯 API(业务直接调)============
+    @property
+    def context(self) -> AgentRunContext:
+        """当前运行上下文(含通讯设施)。"""
+        if self._context is None:
+            raise RuntimeError("agent 尚未运行(context 未注入)")
+        return self._context
+
+    # ---- 黑板 ----
+    def write(self, key: str, value: Any) -> None:
+        """写到共享黑板。"""
+        self.context.blackboard.write(key, value, self.name)
+
+    def read(self, key: str) -> Any | None:
+        """从共享黑板读。"""
+        return self.context.blackboard.read(key)
+
+    def has(self, key: str) -> bool:
+        """黑板 key 是否存在。"""
+        return self.context.blackboard.has(key)
+
+    # ---- 消息 ----
+    async def send(self, target: str, content: str) -> None:
+        """给其它 agent 发消息(通知模式)。"""
+        await self.context.message_bus.send(target, content, self.name)
+
+    async def request(self, target: str, content: str) -> str:
+        """给其它 agent 发消息并等回复(请求-响应模式)。"""
+        return await self.context.message_bus.request(target, content, self.name)
+
+    async def reply(self, original_msg_id: str, content: str) -> None:
+        """回复一条 request 消息。"""
+        await self.context.message_bus.reply(original_msg_id, content, self.name)
+
+    def receive_messages(self) -> list:
+        """取收件箱消息(取出后清空)。"""
+        return self.context.message_bus.receive(self.name)
+
+    # ---- 事件 ----
+    async def publish(self, event_type: str, data: Any = None) -> None:
+        """发布事件。"""
+        await self.context.event_bus.publish(event_type, data, self.name)
+
+    def subscribe(self, event_type: str, handler: Any) -> None:
+        """订阅事件。"""
+        self.context.event_bus.subscribe(event_type, handler)
+
+    def setup(self) -> None:
+        """初始化钩子(子类重写)。在 run() 前调,适合订阅事件等。
+        默认空。"""
+        pass
+
+    # ============ 辅助 ============
+    def _build_messages(self, message: str) -> list[Message]:
+        """构造消息列表:system_prompt + user。"""
+        msgs: list[Message] = []
+        if self.system_prompt:
+            msgs.append({"role": "system", "content": self.system_prompt})
+        elif self.prompt_file:
+            try:
+                from app.core.prompt import render_prompt
+
+                rendered = render_prompt(self.prompt_file)
+                if rendered.system:
+                    msgs.append({"role": "system", "content": rendered.system})
+                msgs.append({"role": "user", "content": rendered.user or message})
+                return msgs
+            except Exception:
+                log.exception("加载 prompt_file '%s' 失败", self.prompt_file)
+        msgs.append({"role": "user", "content": message})
+        return msgs
+
+    def _run_member(
+        self, agent_cls: type[BaseAgent], message: str, ctx: AgentRunContext
+    ) -> Any:
+        """运行成员 agent(复合拓扑用)。
+
+        实例化成员 agent,共享 context(含通讯设施),跑 run()。
+        返回 coroutine(由调用方 await)。
+        """
+
+        async def _do():
+            member = agent_cls()
+            member._context = ctx  # 共享通讯设施
+            member.setup()
+            return await member.run(
+                message, source="internal", context=ctx
+            )
+
+        return _do()
 
 
-def pick_sections(sections: dict[str, str], wanted: list[str]) -> str:
-    """根据 wanted 章节列表取内容。
-
-    "full" → 全文;否则按章节名模糊匹配。
-    """
-    if "full" in wanted or not wanted:
-        return "\n\n".join(sections.values())
-
-    parts: list[str] = []
-    for w in wanted:
-        if w in sections:
-            parts.append(f"### {w}\n{sections[w]}")
-            continue
-        for k, v in sections.items():
-            if w in k and f"### {k}\n{v}" not in parts:
-                parts.append(f"### {k}\n{v}")
-    return "\n\n".join(parts) if parts else "\n\n".join(sections.values())
-
-
-__all__ = [
-    "BaseCheck",
-    "BaseStage",
-    "extract_sections",
-    "pick_sections",
-]
+__all__ = ["BaseAgent"]
