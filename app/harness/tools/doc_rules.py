@@ -2,6 +2,7 @@
 
 处理确定性判断：人名比对、公章名称一致性等。
 """
+
 from __future__ import annotations
 
 from app.harness.tools import tool
@@ -20,12 +21,8 @@ async def check_name_conflict(name1: str, name2: str) -> str:
     if not n1 or not n2:
         return '{"pass": true, "detail": "存在未填写人员，跳过"}'
     if n1 == n2:
-        return (
-            f'{{"pass": false, "detail": "{name1} 与 {name2} 为同一人，违反规定"}}'
-        )
-    return (
-        f'{{"pass": true, "detail": "校对人 {name1} 与批复人 {name2} 不为同一人"}}'
-    )
+        return f'{{"pass": false, "detail": "{name1} 与 {name2} 为同一人，违反规定"}}'
+    return f'{{"pass": true, "detail": "校对人 {name1} 与批复人 {name2} 不为同一人"}}'
 
 
 @tool("check_seal_supplier")
@@ -43,14 +40,8 @@ async def check_seal_supplier(seal_text: str, supplier_name: str) -> str:
     if not sup:
         return '{"pass": true, "detail": "未提供供应商名称，跳过"}'
     if sup in s or s in sup:
-        return (
-            f'{{"pass": true, "detail": "公章 {seal_text} 与供应商 '
-            f'{supplier_name} 一致"}}'
-        )
-    return (
-        f'{{"pass": false, "detail": "公章 {seal_text} 与供应商 '
-        f'{supplier_name} 不一致"}}'
-    )
+        return f'{{"pass": true, "detail": "公章 {seal_text} 与供应商 {supplier_name} 一致"}}'
+    return f'{{"pass": false, "detail": "公章 {seal_text} 与供应商 {supplier_name} 不一致"}}'
 
 
 @tool("check_red_seal")

@@ -1,0 +1,11 @@
+# 这些内容必须由业务方按正式模板维护。空值会让对应规则返回 UNVERIFIABLE，
+# 不会默认放行。
+# 示例结构（不要直接使用占位值）：
+# ppe_requirements:
+#   高处作业: ["<正式模板中的用品>"]
+#   吊装作业: ["<正式模板中的用品>"]
+# hot_work_ppe: ["<正式模板中的动火用品>"]
+# hot_work_risk_template: "<正式风险分析模板全文>"
+ppe_requirements: {}
+hot_work_ppe: []
+hot_work_risk_template: ""

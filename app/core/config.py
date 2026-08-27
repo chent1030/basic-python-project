@@ -6,6 +6,7 @@
     1) 用 crypto.key 解密所有 `enc:` 前缀字段(密码、API key)
     2) 把分段 host/port/username/password/database 拼接成 dsn
 """
+
 from __future__ import annotations
 
 import copy
@@ -64,14 +65,14 @@ class DatasourceConfig(BaseModel):
     """
 
     type: str  # postgresql | mysql | redis
-    dsn: str = ""                     # 整串;留空则用下面的分段字段拼
+    dsn: str = ""  # 整串;留空则用下面的分段字段拼
 
     # ---- 分段连接信息(优先级低于 dsn;两者都没填=不创建该数据源)----
     host: str = ""
     port: int = 0
     username: str = ""
-    password: str = ""                # 支持 enc: 前缀密文,加载时自动解密
-    database: str = ""                # SQL 库名 / Redis db 号
+    password: str = ""  # 支持 enc: 前缀密文,加载时自动解密
+    database: str = ""  # SQL 库名 / Redis db 号
 
     # ---- 连接池大小(HikariCP: minimumIdle + maximumPoolSize)----
     pool_size: int = 10
@@ -170,11 +171,11 @@ class LLMProviderConfig(BaseModel):
     """
 
     base_url: str = "https://api.openai.com/v1"
-    api_key: str = ""                 # 支持 enc: 加密
-    model: str = "gpt-4o-mini"        # 该 provider 的默认 model
+    api_key: str = ""  # 支持 enc: 加密
+    model: str = "gpt-4o-mini"  # 该 provider 的默认 model
     temperature: float = 0.7
     timeout: int = 60
-    max_tokens: int = 0               # 0 = 不发送该参数(国产模型更安全)
+    max_tokens: int = 0  # 0 = 不发送该参数(国产模型更安全)
     max_retries: int = 2
 
 
@@ -218,9 +219,9 @@ class HttpConfig(BaseModel):
 class PromptsConfig(BaseModel):
     """Where prompt files live + caching behaviour."""
 
-    dir: str = "prompts"           # relative to project root
-    default_format: str = "yaml"   # yaml | txt | j2 | jinja2
-    cache: bool = True             # cache rendered/loaded prompts in-memory
+    dir: str = "prompts"  # relative to project root
+    default_format: str = "yaml"  # yaml | txt | j2 | jinja2
+    cache: bool = True  # cache rendered/loaded prompts in-memory
 
 
 class LoggingConfig(BaseModel):
@@ -237,12 +238,12 @@ class LoggingConfig(BaseModel):
     """
 
     level: str = "INFO"
-    format: str = "console"               # console | json
-    color: bool = True                    # 仅 console 模式生效
-    file: str | None = None               # 例如 "logs/app.log"
-    rotation: str = "daily"               # daily | hourly | midnight
-    backup_count: int = 30                # 保留归档文件数
-    max_file_size: int = 0                # MB;0 = 不按大小滚动
+    format: str = "console"  # console | json
+    color: bool = True  # 仅 console 模式生效
+    file: str | None = None  # 例如 "logs/app.log"
+    rotation: str = "daily"  # daily | hourly | midnight
+    backup_count: int = 30  # 保留归档文件数
+    max_file_size: int = 0  # MB;0 = 不按大小滚动
 
 
 class SchedulerConfig(BaseModel):
@@ -291,9 +292,9 @@ class MineruConfig(BaseModel):
     不配(url 空)时,OCR 工具会报错提示未配置。
     """
 
-    url: str = ""                  # MinerU OCR API 地址,如 http://mineru:8000/ocr
-    timeout: float = 120.0         # OCR 耗时较长,默认 120s
-    api_key: str = ""              # 若 MinerU 需认证
+    url: str = ""  # MinerU OCR API 地址,如 http://mineru:8000/ocr
+    timeout: float = 120.0  # OCR 耗时较长,默认 120s
+    api_key: str = ""  # 若 MinerU 需认证
 
 
 # ---------------------------------------------------------------------
@@ -307,10 +308,11 @@ class DocReviewConfig(BaseModel):
     """
 
     enabled: bool = True
-    check_timeout: float = 180.0      # 单项检查(LLM 调用)的超时
+    check_timeout: float = 180.0  # 单项检查(LLM 调用)的超时
+    max_file_size_mb: int = 30  # 单个待审核文件大小上限
     # 图片预处理参数(harness preprocess 层)
-    enlarge_ratio: int = 8            # 图片放大倍数
-    split_count: int = 4              # 长图分割份数
+    enlarge_ratio: int = 8  # 图片放大倍数
+    split_count: int = 4  # 长图分割份数
     long_image_threshold: int = 2000  # 高度超过此值视为长图(像素)
 
 

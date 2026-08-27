@@ -1,5 +1,6 @@
+from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 
 
 class HttpBinResponse(BaseModel):
@@ -18,8 +19,17 @@ class WorkRegion(BaseModel):
 
 class FileInfo(BaseModel):
     id: int
+    relateId: str | None = None
+    cautionId: str | None = None
     fileName: str
+    fileSize: int
+    fileId: str | None = None
+    fileKey: str
+    fileType: str
+    bpmDocId: str
+    isDelete: bool
     s3PreviewFileUrl: str
+    s3OpenFileUrl: str
 
 
 class ReceptionInfo(BaseModel):
@@ -30,15 +40,15 @@ class ReceptionInfo(BaseModel):
     receiverDirector: str | None = None
     receptionDeptDirectorCode: str | None = None
     receptionPersonnelDirectSuperiorName: str
-    receptionPersonnelDirectsuperiorcode: str
-    receptionPersonnelManagerName:str
-    receptionPersonnellanagercode: str
+    receptionPersonnelDirectSuperiorCode: str
+    receptionPersonnelManagerName: str
+    receptionPersonnelManagerCode: str
     isEhsChangeName: str
 
 
 class ProjectManager(BaseModel):
     projectManagerName: str
-    projectHanagerPhone:str
+    projectManagerPhone: str
     projectManagerIdCard: str
 
 
@@ -48,18 +58,18 @@ class Guardian(BaseModel):
     guardianIdCard: str
 
 
-class Safetyofficer(BaseModel): 
-    safetyofficerCertNo: str | None = None
-    certExpiryDate:str
-    certAttachments: list[FileInfo] = []
+class SafetyOfficer(BaseModel):
+    safetyOfficerCertNo: str | None = None
+    certExpiryDate: str
+    certAttachments: list[FileInfo] = Field(default_factory=list)
 
 
 class Operator(BaseModel):
-    operatorName:str
-    openatorIdcand: str
-    hascert:bool
+    operatorName: str
+    operatorIdCard: str
+    hasCert: bool
     certType: str
-    certNo:str
+    certNo: str
     certExpireDate: str
     operatorCertAttachments: list[FileInfo] | None = None
     hasWorkInsurance: bool
@@ -77,23 +87,38 @@ class WorkInfo(BaseModel):
 
 class EhsConstruct(BaseModel):
     vendorName: str
-    workcontentDesc: str
-    workDay:int
-    WorkPermitNo: str
-    companyName:str
-    projectName:str
+    workContentDesc: str
+    workDay: int
+    workPermitNo: str
+    companyName: str
+    projectName: str
     baseName: str
     workRegion: list[WorkRegion]
     # 施工方案书
-    constructionProgrammeFileInfolist: list[FileInfo]
+    constructionProgrammeFileInfoList: list[FileInfo] = Field(
+        validation_alias=AliasChoices(
+            "constructionProgrammeFileInfoList",
+            "constructionProgrammeFileInfolist",
+        )
+    )
     # 安全交底书
     constructionTechDiscloseFileInfoList: list[FileInfo]
+    # 动火作业施工交底书(仅勾选动火作业时需要)
+    hotWorkTechDiscloseFileInfoList: list[FileInfo] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices(
+            "hotWorkTechDiscloseFileInfoList",
+            "hotWorkDiscloseFileInfoList",
+            "constructionHotWorkFileInfoList",
+        ),
+    )
+    # 页面/流程系统传入的发起时间；缺失时签字日期规则进入人工复核
+    processInitiatedAt: datetime | None = None
     receptionInfo: ReceptionInfo
-    projecthanager: ProjectManager
+    projectManager: ProjectManager
     guardian: Guardian
-    #证书
-    safetyofficer: Safetyofficer
-    #作业员&证书
+    # 证书
+    safetyOfficer: SafetyOfficer
+    # 作业员&证书
     operator: list[Operator]
     workInfo: list[WorkInfo]
-

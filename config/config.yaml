@@ -171,6 +171,7 @@ doc_review:
   enabled: true
   callback_timeout: 30.0           # 审核完成后回调外部系统的超时
   check_timeout: 180.0             # 单项检查(agent 调用)的超时
+  max_file_size_mb: 30             # 单文件大小上限
 
 # ---------------------------------------------------------------------
 # Harness 框架 —— 会话记忆存储数据源

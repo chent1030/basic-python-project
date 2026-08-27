@@ -1,10 +1,8 @@
-"""文档审核项目 —— 继承 harness 基类实现文档智能审核。
+"""Typed multi-agent construction document review project."""
 
-入口:POST /api/v1/doc-review(EhsConstruct) → 审核每个文件 → 返回报告。
-核心 agent:DocReviewFlow(pipeline 拓扑)。
-"""
 from __future__ import annotations
 
-from app.projects.doc_review.agents import DocReviewFlow
+from app.projects.doc_review.rules import RuleEngine
+from app.projects.doc_review.service import run_doc_review
 
-__all__ = ["DocReviewFlow"]
+__all__ = ["RuleEngine", "run_doc_review"]

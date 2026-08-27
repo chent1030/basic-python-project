@@ -2,6 +2,7 @@
 
 工具用普通 Python 函数 + @tool 装饰器定义。各后端自动转换格式。
 """
+
 from __future__ import annotations
 
 import inspect
@@ -33,12 +34,13 @@ def tool(name: str):
         for pname in inspect.signature(func).parameters:
             if pname in ("self", "cls"):
                 continue
-            params[pname] = getattr(
-                hints.get(pname, str), "__name__", str(hints.get(pname, "str"))
-            )
+            params[pname] = getattr(hints.get(pname, str), "__name__", str(hints.get(pname, "str")))
         _REGISTRY[name] = ToolDef(
-            name=name, func=func, description=desc,
-            params=params, is_async=inspect.iscoroutinefunction(func),
+            name=name,
+            func=func,
+            description=desc,
+            params=params,
+            is_async=inspect.iscoroutinefunction(func),
         )
         return func
 
@@ -82,12 +84,14 @@ def discover_tools() -> None:
         except Exception:
             import logging
 
-            logging.getLogger("app.harness.tools").exception(
-                "导入工具模块失败: %s", mod_name
-            )
+            logging.getLogger("app.harness.tools").exception("导入工具模块失败: %s", mod_name)
 
 
 __all__ = [
-    "tool", "ToolDef", "resolve_tools", "get_tool", "all_tools",
+    "tool",
+    "ToolDef",
+    "resolve_tools",
+    "get_tool",
+    "all_tools",
     "discover_tools",
 ]
