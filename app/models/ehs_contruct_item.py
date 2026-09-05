@@ -29,7 +29,7 @@ class FileInfo(BaseModel):
     bpmDocId: str
     isDelete: bool
     s3PreviewFileUrl: str
-    s3OpenFileUrl: str
+    s3OpenFileUrl: str | None = None
 
 
 class ReceptionInfo(BaseModel):
@@ -102,7 +102,7 @@ class EhsConstruct(BaseModel):
         )
     )
     # 安全交底书
-    constructionTechDiscloseFileInfoList: list[FileInfo]
+    constructionTechDiscloseFileInfoList: list[FileInfo] = Field(default_factory=list)
     # 动火作业施工交底书(仅勾选动火作业时需要)
     hotWorkTechDiscloseFileInfoList: list[FileInfo] = Field(
         default_factory=list,
