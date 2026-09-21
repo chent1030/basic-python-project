@@ -1,0 +1,61 @@
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cps-agent-framework:local
+    ports:
+      - "8000:18555"
+    environment:
+      AGENT_DATA_DIR: /data/agent
+      AGENT_EMBEDDED_WORKER: "true"
+      CPS_CONFIG: /app/config/cps.docker.yaml
+    volumes:
+      - ./config/config.yaml:/app/config/config.yaml:ro
+      - ./config/agents.docker.yaml:/app/config/agents.yaml:ro
+      - ./config/cps.docker.yaml:/app/config/cps.docker.yaml:ro
+      - ./config/local.docker.yaml:/app/config/local.yaml:ro
+      - agent-data:/data/agent
+    depends_on:
+      embedding:
+        condition: service_started
+      vector:
+        condition: service_started
+    networks: [cps]
+
+  embedding:
+    build:
+      context: ./infra/embedding-service
+      args:
+        PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-python:3.11-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+    image: cps-siglip2-embedding:local
+    environment:
+      MODEL_PATH: /models/siglip2-so400m-patch14-384
+      DEVICE: ${EMBEDDING_DEVICE:-cpu}
+    volumes:
+      - ${SIGLIP_MODEL_DIR:-/Users/csai/project/models}:/models:ro
+    ports:
+      - "8090:8090"
+    networks: [cps]
+
+  vector:
+    build:
+      context: ./infra/vector-service
+      args:
+        PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-python:3.11-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+    image: cps-vector-service:local
+    volumes:
+      - vector-data:/data
+    ports:
+      - "8008:8008"
+    networks: [cps]
+
+volumes:
+  agent-data:
+  vector-data:
+
+networks:
+  cps:
+    driver: bridge

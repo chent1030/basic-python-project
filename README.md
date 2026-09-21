@@ -18,7 +18,33 @@
 
 ---
 
+## 代码优先 Agent 框架
+
+新增 `app.harness.kernel`：DDD 分层、可组合的单体/顺序/并行/条件/循环/Supervisor、
+可选人工审批和改派、任务隔离、持久恢复、后台 Worker、监控 SSE、DeepAgents 子 Agent、
+fork/解释器、MCP 和沙箱适配。主 Agent 不是必选组件，业务组合由工程师写 Python。
+
+- 开发与部署说明：`docs/Agent框架开发与部署指南.md`
+- 能力与验证边界：`docs/Agent框架能力验收清单.md`
+- 模型地址及每 Agent 模型配置：`config/agents.yaml`
+- 实际业务组合示例：`app/projects/agent_examples.py`
+- 注册模块检查：`uv run --locked agent-framework workflows`
+
+新框架 API `/api/v1/agent-runs` 强制要求包含租户与角色的 access JWT，
+不跟随旧接口“默认关闭认证”的设置。旧 Harness 仅保留文档审核使用的单 Agent 兼容入口，
+不自动获得新内核保证；旧拓扑与演示已移除，迁移说明见 `HARNESS.md`。
+
+---
+
 ## 目录结构
+
+CPS 巡检后端已作为业务模块接入当前 Agent 框架，入口 `/api/v1/cps`。
+业务代码位于 `app/projects/cps`，不挂载旧原型前端。
+配置与接口说明见 `docs/CPS后端迁移与接口指南.md`；回归测试运行 `uv run --locked pytest tests/cps -q`。
+
+独立 CPS 前端位于 `cps-frontend/`，采用 React + TypeScript + Tailwind CSS，接入当前后端。
+在该目录执行 `npm ci && npm run dev`，默认访问 `http://127.0.0.1:5173`。
+身份连接、代理配置、业务页面和测试说明见 `cps-frontend/README.md`；不恢复已删除的旧前端。
 
 ```
 fastapi_demo/

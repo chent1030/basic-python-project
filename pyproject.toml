@@ -12,9 +12,9 @@ dependencies = [
     # SQLAlchemy 2.x async
     "sqlalchemy[asyncio]>=2.0.30",
     # Async drivers — keep all three so any datasource can be enabled at runtime
-    "asyncpg>=0.29.0",          # PostgreSQL async driver
-    "aiomysql>=0.2.0",          # MySQL async driver
-    "redis[hiredis]>=5.0.0",    # Redis async (redis.asyncio)
+    "asyncpg>=0.29.0", # PostgreSQL async driver
+    "aiomysql>=0.2.0", # MySQL async driver
+    "redis[hiredis]>=5.0.0", # Redis async (redis.asyncio)
     # Auth
     "pyjwt>=2.8.0",
     "passlib[bcrypt]>=1.7.4",
@@ -30,12 +30,15 @@ dependencies = [
     # Utils
     "python-multipart>=0.0.9",
     "httpx>=0.27.0",
-    "jinja2>=3.1.0",          # prompt template rendering (optional but recommended)
-    # Harness 框架(文件预处理)
-    "Pillow>=10.0.0",         # 图片分割/放大(预处理层)
+    "jinja2>=3.1.0", # prompt template rendering (optional but recommended)
+    # OCR 图片解析
+    "Pillow>=10.0.0",
     # Harness 后端(agent 循环)
-    "deepagents>=0.6.12",     # 工具循环/规划/文件系统/skills
-    "agentscope>=2.0.5",      # ReAct 循环/skills
+    "deepagents[quickjs]==0.7.13", # 工具循环/规划/文件系统/skills
+    "langgraph-checkpoint-sqlite>=3.0,<4",
+    "langchain-mcp-adapters>=0.2,<1",
+    "langchain-anthropic>=1,<2",
+    "langchain-ollama>=1,<2",
 ]
 
 [project.optional-dependencies]
@@ -56,12 +59,14 @@ dev = [
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-packages = ["app"]
-# We ship only the `app` package; `config/` holds YAML files read at runtime.
+[project.scripts]
+agent-framework = "app.harness.kernel.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
 
 [tool.setuptools.package-data]
-app = ["py.typed"]
+app = ["py.typed", "**/*.md", "**/*.j2", "**/*.yaml", "**/*.json"]
 
 # Tell the `fastapi` CLI which app to run.
 [tool.fastapi]

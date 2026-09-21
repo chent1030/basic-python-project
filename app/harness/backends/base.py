@@ -1,4 +1,4 @@
-"""后端适配层 —— 屏蔽 deepagents/agentscope/llm 的差异。
+"""旧单 Agent 兼容后端 —— deepagents/llm。
 
 每个后端实现 BaseBackend(invoke/stream),把统一的 AgentRunContext 翻译成各自库的输入。
 BaseAgent 根据 backend 类属性选后端。
@@ -40,11 +40,7 @@ def build_backend(agent: BaseAgent) -> BaseBackend:
         from app.harness.backends.deepagents_backend import DeepAgentsBackend
 
         return DeepAgentsBackend(agent)
-    if backend == "agentscope":
-        from app.harness.backends.agentscope_backend import AgentScopeBackend
-
-        return AgentScopeBackend(agent)
-    raise ValueError(f"未知 backend: {backend}(llm | deepagents | agentscope)")
+    raise ValueError(f"不支持的旧 Harness backend: {backend!r}；仅支持 llm | deepagents")
 
 
 __all__ = ["BaseBackend", "build_backend"]

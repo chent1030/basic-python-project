@@ -8,6 +8,7 @@ Wires together:
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -41,8 +42,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     log.info("All datasources, LLM, HTTP client, scheduler ready.")
 
     try:
+        if os.environ.get("AGENT_RUNTIME_ENABLED", "true").lower() == "true":
+            from app.harness.kernel.bootstrap import build_runtime, build_worker
+
+            app.state.agent_runtime = await build_runtime()
+            if os.environ.get("AGENT_EMBEDDED_WORKER", "true").lower() == "true":
+                app.state.agent_worker = build_worker(app.state.agent_runtime)
+                app.state.agent_worker.start()
         yield
     finally:
+        if getattr(app.state, "agent_worker", None):
+            await app.state.agent_worker.stop()
+            app.state.agent_worker = None
+        if getattr(app.state, "agent_runtime", None):
+            app.state.agent_runtime.repository.close()
+            app.state.agent_runtime = None
         log.info("Closing scheduler, HTTP client, LLM, datasources...")
         await scheduler_service.shutdown()
         await http_client.shutdown()
@@ -72,6 +86,9 @@ def create_app() -> FastAPI:
 
     # ---- routes -----------------------------------------------------
     app.include_router(api_router, prefix=settings.app.api_prefix)
+    from app.api.v1.endpoints.agent_runs import install_error_handlers
+
+    install_error_handlers(app)
 
     @app.get("/health", tags=["meta"])
     async def health() -> dict[str, object]:

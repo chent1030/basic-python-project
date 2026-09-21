@@ -16,6 +16,9 @@ venv/
 config/local.yaml
 *.local.yaml
 logs/
+.agent-data/
+dist/
+build/
 
 # Local document-review inputs and generated diagnostics (may contain PII)
 /data.json

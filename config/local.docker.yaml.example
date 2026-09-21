@@ -1,0 +1,16 @@
+# 复制为 config/local.yaml 后填写 Qwen Key。
+app:
+  port: 8000
+
+llm:
+  default_provider: qwen
+  providers:
+    qwen:
+      base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api_key: "填写 Qwen Key"
+      model: qwen-plus
+      temperature: 0.2
+
+agents:
+  enabled: true
+

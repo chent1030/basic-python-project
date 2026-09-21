@@ -1,6 +1,6 @@
-"""BaseAgent —— 所有 agent 的底层基类。
+"""BaseAgent —— 文档审核仍使用的旧单 Agent 兼容基类。
 
-业务继承拓扑基类(BaseSingleAgent / BaseParallelAgent 等),不直接继承此层。
+现有业务继承 BaseSingleAgent；新业务使用 app.harness.kernel。
 此层提供:声明式配置(类属性) + run() 主流程 + 后端调用 + 中间件 + HITL + 通讯 API。
 
 核心流程:
@@ -30,7 +30,7 @@ class BaseAgent:
 
     # ============ 声明式配置(子类设类属性)============
     name: str = ""
-    backend: str = "deepagents"  # "deepagents" | "agentscope" | "llm"
+    backend: str = "deepagents"
     provider: str = ""  # LLM provider(空=默认)
     system_prompt: str = ""
     prompt_file: str = ""
@@ -173,7 +173,7 @@ class BaseAgent:
 
     # ============ 后端调用 ============
     async def _invoke_backend(self, ctx: AgentRunContext) -> str:
-        """根据 self.backend 调对应后端(deepagents/agentscope/llm)。"""
+        """根据 self.backend 调对应兼容后端(deepagents/llm)。"""
         backend = self._get_backend()
         return await backend.invoke(ctx)
 

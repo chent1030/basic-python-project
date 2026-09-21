@@ -1,0 +1,16 @@
+enabled: true
+internal_trust: true
+trusted_networks:
+  - 127.0.0.1/32
+  - ::1/128
+max_rounds: 40
+max_image_bytes: 10000000
+max_images: 20
+history_days: 90
+memory_limit: 5
+embeddings:
+  url: http://127.0.0.1:8090/image-embeddings
+  model: siglip2-so400m-patch14-384
+  api_key_env: null
+  timeout: 30
+  max_dimensions: 8192

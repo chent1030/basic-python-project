@@ -1,76 +1,48 @@
-"""Harness 框架 —— 通用 agent 基类体系 + agent 间通讯。
+"""DDD Agent kernel namespace with lazy, legacy document-review exports.
 
-核心:
-- 拓扑=基类(继承式):BaseSingleAgent/BaseParallelAgent/BasePipelineAgent/...
-- 配置=类属性(纯 Python,无 config.yml)
-- agent 间通讯:共享黑板 + 消息传递 + 事件总线
-- 3 个后端可切换:deepagents / agentscope / llm
-- 7 个中间件(洋葱模型) + HITL + 记忆 + 工具 + 聚合器
-
-业务用法:
-    from app.harness import BaseSingleAgent, BasePipelineAgent, PipelineStep, tool
-
-    class TypoChecker(BaseSingleAgent):
-        name = "typo"
-        backend = "deepagents"
-        system_prompt = "你是文字校对专家"
-        middleware = ["tracing", "filter"]
-
-    agent = TypoChecker()
-    result = await agent.run("检查这段文字的错别字")
+New workflows must import from app.harness.kernel. The exports here only
+support existing document-review code; importing the kernel does not load them.
 """
+
 from __future__ import annotations
 
-# 拓扑基类
-from app.harness.agents import (
-    BaseConversationalAgent,
-    BaseParallelAgent,
-    BasePipelineAgent,
-    BasePlanExecuteAgent,
-    BaseReflectionAgent,
-    BaseRouterAgent,
-    BaseSequentialAgent,
-    BaseSingleAgent,
-    BaseSubagentAgent,
-    PipelineStep,
-)
+from importlib import import_module
+from typing import TYPE_CHECKING, Any
 
-# 工具 & 聚合器
-from app.harness.aggregators import aggregator
+if TYPE_CHECKING:
+    from app.harness.agents.single import BaseSingleAgent as BaseSingleAgent
+    from app.harness.base import BaseAgent as BaseAgent
+    from app.harness.communication import Blackboard as Blackboard
+    from app.harness.communication import EventBus as EventBus
+    from app.harness.communication import MessageBus as MessageBus
+    from app.harness.context import AgentResult as AgentResult
+    from app.harness.context import AgentRunContext as AgentRunContext
+    from app.harness.context import Message as Message
+    from app.harness.tools import tool as tool
 
-# 基类
-from app.harness.base import BaseAgent
+_LEGACY_EXPORTS = {
+    "BaseAgent": "app.harness.base",
+    "BaseSingleAgent": "app.harness.agents.single",
+    "AgentRunContext": "app.harness.context",
+    "AgentResult": "app.harness.context",
+    "Message": "app.harness.context",
+    "tool": "app.harness.tools",
+    "Blackboard": "app.harness.communication",
+    "MessageBus": "app.harness.communication",
+    "EventBus": "app.harness.communication",
+}
 
-# 通讯
-from app.harness.communication import Blackboard, EventBus, MessageBus
+__all__ = list(_LEGACY_EXPORTS)
 
-# 数据结构
-from app.harness.context import AgentResult, AgentRunContext, Message
-from app.harness.tools import tool
 
-__all__ = [
-    # 底层基类
-    "BaseAgent",
-    # 拓扑基类
-    "BaseSingleAgent",
-    "BaseParallelAgent",
-    "BaseSequentialAgent",
-    "BasePipelineAgent",
-    "PipelineStep",
-    "BaseConversationalAgent",
-    "BaseRouterAgent",
-    "BasePlanExecuteAgent",
-    "BaseReflectionAgent",
-    "BaseSubagentAgent",
-    # 数据结构
-    "AgentRunContext",
-    "AgentResult",
-    "Message",
-    # 工具 & 聚合器
-    "tool",
-    "aggregator",
-    # 通讯
-    "Blackboard",
-    "MessageBus",
-    "EventBus",
-]
+def __getattr__(name: str) -> Any:
+    module_name = _LEGACY_EXPORTS.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(module_name), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))

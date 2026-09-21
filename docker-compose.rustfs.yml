@@ -1,0 +1,30 @@
+services:
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: cps-rustfs
+    restart: unless-stopped
+    command: ["--console-address", ":9001", "/data"]
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-admin}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-Ct0520.0402}
+      RUSTFS_CONSOLE_ADDRESS: :9001
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - rustfs-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:9000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - cps
+
+volumes:
+  rustfs-data:
+
+networks:
+  cps:
+    name: basic-project_cps
+    driver: bridge

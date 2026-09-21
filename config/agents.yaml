@@ -1,0 +1,40 @@
+providers:
+  # 请直接在 api_key 填写你的通义千问 Key；留空时模型调用会明确报错。
+  qwen:
+    kind: openai
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api_key: "sk-e36a95a1fb79492f994d91c535d4966a"
+    timeout: 120
+    max_retries: 2
+models:
+  cps_vision:
+    provider: qwen
+    model: Qwen2.5-VL-7B-Instruct
+    parameters:
+      temperature: 0.1
+      max_tokens: 8192
+    capabilities: [tools, structured_output, vision]
+  default:
+    provider: qwen
+    model: qwen-turbo
+    parameters:
+      temperature: 0.1
+      max_tokens: 4096
+    capabilities: [tools, structured_output]
+  reasoning_large:
+    provider: qwen
+    model: qwen-plus
+    parameters:
+      temperature: 0.2
+      max_tokens: 8192
+    capabilities: [tools, structured_output]
+agents:
+  coordinator: reasoning_large
+  cps_main: reasoning_large
+  cps_issue_identification: cps_vision
+  cps_rectification_judgement: cps_vision
+  cps_history_analysis: reasoning_large
+  cps_coverage_analysis: reasoning_large
+  cps_report: reasoning_large
+  cps_work_plan: reasoning_large
+  cps_observation: default
