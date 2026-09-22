@@ -15,6 +15,7 @@ from app.projects.initial_review.application.service import (
 )
 from app.projects.initial_review.infrastructure.callback import JavaCallbackClient
 from tests.initial_review.conftest import (
+    VALID_REASON,
     drain,
     make_request,
     make_service,
@@ -38,15 +39,16 @@ async def test_submit_completes_and_dispatches_callback() -> None:
         row = (
             await session.execute(select(AgentInitialReviewExec))
         ).scalar_one()
-    assert row.text_checks["reason"]["length"] == 15
+    assert row.text_checks["reason"]["length"] == len(VALID_REASON)
     assert row.text_checks["reason"]["valid"] is True
-    # 视觉/语义 NOT_IMPLEMENTED 占位，不伪造通过
-    assert row.model_checks["image_compare"]["implementation_status"] == "NOT_IMPLEMENTED"
-    assert row.model_checks["measure_similarity"]["implementation_status"] == "NOT_IMPLEMENTED"
-    assert row.model_checks["text_validity"]["implementation_status"] == "NOT_IMPLEMENTED"
-    # 全部文本通过但有未实现检查 → PARTIAL
+    # 波次 2：A6 确定性雷同恒实现；A7/A8 模型检查未装配（单测无 LLM）→ SKIPPED 不伪造
+    assert row.model_checks["measure_similarity"]["implementation_status"] == "IMPLEMENTED"
+    assert row.model_checks["measure_similarity"]["verdict"] == "PASS"
+    assert row.model_checks["text_validity"]["implementation_status"] == "SKIPPED"
+    assert row.model_checks["image_compare"]["implementation_status"] == "SKIPPED"
+    # 文本规则全过 + A6 过，但 A7/A8 未出具结论 → PARTIAL（部分完成，不伪造通过）
     assert row.overall == "PARTIAL"
-    assert row.model_version == "text-rules/d-22@1"
+    assert row.model_version == "text-rules/d-22@1+measure-similarity/det@1"
     # deadline = started + 480s
     assert row.deadline_at - row.started_at == timedelta(seconds=480)
 
@@ -59,11 +61,11 @@ async def test_submit_completes_and_dispatches_callback() -> None:
     assert payload["is_late"] is False
     types = {(i["check_type"], i["field_name"]): i for i in payload["items"]}
     assert types[("TEXT_LENGTH", "reason")]["verdict"] == "PASS"
-    assert types[("TEXT_LENGTH", "reason")]["text_length"] == 15
+    assert types[("TEXT_LENGTH", "reason")]["text_length"] == len(VALID_REASON)
     assert types[("PUNCTUATION_RATIO", "reason")]["punctuation_count"] == 0
     skipped = [i for i in payload["items"] if i["verdict"] == "SKIPPED"]
-    assert {i["implementation_status"] for i in skipped} == {"NOT_IMPLEMENTED"}
-    assert len(skipped) == 5  # 3×TEXT_VALIDITY + IMAGE_COMPARE + MEASURE_SIMILARITY
+    assert {i["implementation_status"] for i in skipped} == {"SKIPPED"}
+    assert len(skipped) == 4  # 3×TEXT_VALIDITY + IMAGE_COMPARE（A6 已实现为 PASS）
     # 回调投递状态落库
     async with sf() as session:
         row = (
@@ -139,7 +141,7 @@ async def test_any_field_fail_makes_problem() -> None:
 async def test_wall_clock_deadline_marks_failed_timeout() -> None:
     sf = await make_session_factory()
 
-    async def slow_runner(row):
+    async def slow_runner(row, request):
         await asyncio.sleep(0.2)
         return {}, {}, "PASS"
 

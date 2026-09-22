@@ -19,6 +19,7 @@ from typing import Any
 
 import httpx
 
+from app.projects.initial_review.domain.verdicts import collect_check_outcomes
 from app.projects.initial_review.infrastructure.config import InitialReviewSettings
 
 logger = logging.getLogger(__name__)
@@ -68,92 +69,39 @@ class JavaCallbackClient:
         return False, attempts, last_error
 
 
-def build_callback_payload(row, text_checks: dict[str, Any] | None) -> dict[str, Any]:
+def build_callback_payload(row) -> dict[str, Any]:
     """把 exec 行组装成 C-02 回调 Body（字段名对齐 Java cps_initial_review_item）。
 
-    items 覆盖五检查项（PRD §29.1）：
-    - TEXT_LENGTH / PUNCTUATION_RATIO：三字段逐项（verdict PASS/FAIL + L/P 实际值 + ratio_ok）；
-    - TEXT_VALIDITY（语义有效性）：verdict=SKIPPED +
-      implementation_status=NOT_IMPLEMENTED（待线 A7）；
-    - IMAGE_COMPARE（前后图视觉）/ MEASURE_SIMILARITY（短长期措施雷同）：
-      verdict=SKIPPED + implementation_status=NOT_IMPLEMENTED（待线 A6/A8）。
+    items 由 ``collect_check_outcomes(row.text_checks, row.model_checks)`` 单一事实源生成，
+    覆盖五检查项（PRD §29.1）× 实际执行状态（IMPLEMENTED/DEGRADED/SKIPPED）；
     「部分检查缺失记 SKIPPED，不得伪造通过」（设计 §2.2(e) / PRD §28.4）。
+    Java Item DTO 无 implementation_status/model/prompt_version 字段——J0 已验证
+    Spring Boot Jackson 默认忽略未知字段（波次 1 曾随 item 发送 implementation_status）。
     """
-    checks = text_checks or {}
+    outcomes = collect_check_outcomes(row.text_checks, row.model_checks)
     items: list[dict[str, Any]] = []
-    for field in ("reason", "short_term", "long_term"):
-        fc = checks.get(field) or {}
-        items.append(
-            {
-                "check_type": "TEXT_LENGTH",
-                "field_name": field,
-                "verdict": "PASS" if fc.get("length_ok") else "FAIL",
-                "text_length": fc.get("length"),
-                "reason": None if fc.get("length_ok") else "文本长度不足 15 字（剔除换行后）",
-            }
-        )
-        items.append(
-            {
-                "check_type": "PUNCTUATION_RATIO",
-                "field_name": field,
-                "verdict": "PASS" if fc.get("ratio_ok") else "FAIL",
-                "text_length": fc.get("length"),
-                "punctuation_count": fc.get("punctuation"),
-                "ratio_ok": fc.get("ratio_ok"),
-                "reason": (
-                    None
-                    if fc.get("ratio_ok")
-                    else f"标点比例超限：P={fc.get('punctuation')}，L={fc.get('length')}"
-                ),
-            }
-        )
-        # 连续标点违规并入 PUNCTUATION_RATIO 的意见明细
-        if fc.get("violations"):
-            consec = [v for v in fc["violations"] if v.get("type") == "consecutive_punctuation"]
-            for v in consec:
-                items.append(
-                    {
-                        "check_type": "PUNCTUATION_RATIO",
-                        "field_name": field,
-                        "verdict": "FAIL",
-                        "text_length": fc.get("length"),
-                        "punctuation_count": fc.get("punctuation"),
-                        "ratio_ok": fc.get("ratio_ok"),
-                        "reason": "存在连续标点",
-                        "problem_fragment": v.get("fragment"),
-                    }
-                )
-        items.append(
-            {
-                "check_type": "TEXT_VALIDITY",
-                "field_name": field,
-                "verdict": "SKIPPED",
-                "implementation_status": "NOT_IMPLEMENTED",
-                "reason": "语义有效性检查待线 A7（模型侧）接入后启用",
-            }
-        )
-    items.append(
-        {
-            "check_type": "IMAGE_COMPARE",
-            "field_name": None,
-            "verdict": "SKIPPED",
-            "implementation_status": "NOT_IMPLEMENTED",
-            "reason": "整改前后图片视觉对比待线 A6 接入后启用",
+    for o in outcomes:
+        item: dict[str, Any] = {
+            "check_type": o.check_type,
+            "field_name": o.field_name,
+            "verdict": o.verdict,
+            "implementation_status": o.implementation_status,
+            "reason": o.reason,
+            "problem_fragment": o.problem_fragment,
+            "text_length": o.text_length,
+            "punctuation_count": o.punctuation_count,
+            "ratio_ok": o.ratio_ok,
+            "confidence": o.confidence,
+            "evidence_refs": list(o.evidence_refs),
+            "model": o.model,
+            "prompt_version": o.prompt_version,
         }
-    )
-    items.append(
-        {
-            "check_type": "MEASURE_SIMILARITY",
-            "field_name": None,
-            "verdict": "SKIPPED",
-            "implementation_status": "NOT_IMPLEMENTED",
-            "reason": "短长期措施雷同检测待线 A8 接入后启用",
-        }
-    )
+        items.append(item)
 
     def _iso(value: datetime | None) -> str | None:
         return value.isoformat() if value else None
 
+    model_checks = row.model_checks or {}
     return {
         "idempotency_key": f"initial-review-result-{row.task_id}",
         "task_id": row.task_id,
@@ -162,6 +110,9 @@ def build_callback_payload(row, text_checks: dict[str, Any] | None) -> dict[str,
         "version_no": row.version_no,
         "status": row.status,
         "overall": row.overall,
+        "overall_note": (
+            model_checks.get("aggregate_note") if isinstance(model_checks, dict) else None
+        ),
         "is_late": False,  # Java 端按其任务状态判定置位
         "error": row.error,
         "error_code": row.error_code,

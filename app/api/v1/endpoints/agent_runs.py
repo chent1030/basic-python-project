@@ -7,15 +7,15 @@ import time
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.responses import StreamingResponse
 from fastapi.routing import APIRoute
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.security import decode_token
-from app.projects.cps.infrastructure.config import CPSConfig
 from app.harness.kernel import Artifacts, Mailbox, Memory, Runtime, Scope
 from app.harness.kernel.domain.models import Forbidden, FrameworkError, segment
+from app.projects.cps.infrastructure.config import CPSConfig
 
 
 class FrameworkRoute(APIRoute):
@@ -58,7 +58,10 @@ def principal(
         trusted = False
         try:
             address = ipaddress.ip_address(client)
-            trusted = any(address in ipaddress.ip_network(network) for network in configuration.trusted_networks)
+            trusted = any(
+                address in ipaddress.ip_network(network)
+                for network in configuration.trusted_networks
+            )
         except ValueError:
             trusted = client == "localhost"
         if trusted and configuration.internal_trust:

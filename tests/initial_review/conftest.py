@@ -88,7 +88,13 @@ async def drain(pending: list[Awaitable]) -> None:
         await pending.pop(0)
 
 
-VALID_TEXT = "整改原因整改原因整改原因整改原"  # 恰 15 字（4×3+3）
+#: 三字段各异的有效文本（≥15 字且互相不相似：A6 同单互比恒 PASS，
+#  波次 1 的「三字段同文」默认值在 A6 接线后会同单相似度=1.0 → 假 FAIL）
+VALID_REASON = "设备接地引下线锈蚀严重导致接触不良存在安全隐患"
+VALID_SHORT = "已更换锈蚀接地扁铁并对接头做紧固和防腐涂刷处理"
+VALID_LONG = "建立季度专项巡检制度对接地电阻值定期检测并纳入班组考核"
+#: 波次 1 遗留别名（部分测试引用）
+VALID_TEXT = VALID_REASON
 
 
 def make_request(**over: Any) -> RectificationReviewRequest:
@@ -96,9 +102,9 @@ def make_request(**over: Any) -> RectificationReviewRequest:
         "issue_id": "ISS-001",
         "submission_id": "SUB-2026-001",
         "version_no": 1,
-        "reason": VALID_TEXT,
-        "short_term_measure": VALID_TEXT,
-        "long_term_measure": VALID_TEXT,
+        "reason": VALID_REASON,
+        "short_term_measure": VALID_SHORT,
+        "long_term_measure": VALID_LONG,
     }
     values.update(over)
     return RectificationReviewRequest(**values)

@@ -19,7 +19,13 @@ J0 战果（2026-09-22）：首次运行暴露两处真实跨端 bug（agent_cal
 app.state.datasources KeyError；C-02 DTO task_id 声明 Long 收字符串引用 400），
 修复后全链路 PASS。详见 docs/开发进展日志.md J0 章节。
 """
-import json, os, sys, time, urllib.request, urllib.error
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.request
+
 import pymysql
 
 MYSQL = dict(
@@ -43,7 +49,9 @@ BODY = {
     'short_term_measure': '当日停机更换配件并复核接线，安排专人值守观察两小时。',
     'long_term_measure': '纳入季度预防性维护计划，增加巡检频次并培训操作人员。',
     'before_attachments': [], 'after_attachments': [],
-    'issue_snapshot': {'issue_code': f'J0-E2E-{ISSUE}', 'title': 'J0 联调模拟问题', 'severity': 'MEDIUM'},
+    'issue_snapshot': {
+        'issue_code': f'J0-E2E-{ISSUE}', 'title': 'J0 联调模拟问题', 'severity': 'MEDIUM',
+    },
 }
 
 def http(method, url, body=None):
@@ -60,8 +68,12 @@ def main():
     assert MYSQL['password'], 'MYSQL_PASSWORD 未设置（凭据不进脚本）'
     conn = pymysql.connect(**MYSQL)
     cur = conn.cursor()
-    cur.execute("DELETE i FROM cps_initial_review_item i JOIN cps_initial_review_task t ON i.task_id=t.id WHERE t.issue_id=%s", (ISSUE,))
-    cur.execute("DELETE r FROM cps_initial_review_result r JOIN cps_initial_review_task t ON r.task_id=t.id WHERE t.issue_id=%s", (ISSUE,))
+    cur.execute(
+        "DELETE i FROM cps_initial_review_item i JOIN cps_initial_review_task t "
+        "ON i.task_id=t.id WHERE t.issue_id=%s", (ISSUE,))
+    cur.execute(
+        "DELETE r FROM cps_initial_review_result r JOIN cps_initial_review_task t "
+        "ON r.task_id=t.id WHERE t.issue_id=%s", (ISSUE,))
     cur.execute("DELETE FROM cps_initial_review_task WHERE issue_id=%s", (ISSUE,))
     cur.execute("""INSERT INTO cps_initial_review_task
         (issue_id, submission_id, version_no, status, idempotency_key, submitted_at, timeout_at)
@@ -76,16 +88,21 @@ def main():
     assert st == 202, f'C-01 expected 202 got {st}'
     ref = resp.get('review_task_ref') or resp.get('task_id')
     assert ref, f'C-01 response missing ref: {resp}'
-    cur.execute("UPDATE cps_initial_review_task SET review_task_ref=%s WHERE id=%s", (str(ref), task_id))
+    cur.execute(
+        "UPDATE cps_initial_review_task SET review_task_ref=%s WHERE id=%s",
+        (str(ref), task_id))
     conn.commit()
 
     final = None
     for _ in range(60):
         time.sleep(3)
-        cur.execute("SELECT status, error_code, completed_at, retry_count FROM cps_initial_review_task WHERE id=%s", (task_id,))
+        cur.execute(
+            "SELECT status, error_code, completed_at, retry_count "
+            "FROM cps_initial_review_task WHERE id=%s", (task_id,))
         row = cur.fetchone()
         if row and row[0] != 'RUNNING':
-            final = row; break
+            final = row
+            break
     assert final, '任务 180s 未到终态：查 /tmp/cps-python.log 回调与 /tmp/cps-java.log'
     print(f'[assert] task 终态={final[0]} error_code={final[1]} retry={final[3]}')
     assert final[0] == 'COMPLETED' and final[1] is None, f'非预期终态: {final}'
@@ -106,7 +123,8 @@ def main():
     print(f'[replay] status={st2} replayed={resp2.get("replayed")}')
     assert st2 == 202 and resp2.get('replayed') is True, f'replay expected 202+replayed got {st2}'
 
-    conflict_body = dict(BODY); conflict_body['reason'] = '冲突载荷：同幂等键不同内容的探测请求。'
+    conflict_body = dict(BODY)
+    conflict_body['reason'] = '冲突载荷：同幂等键不同内容的探测请求。'
     st2b, _ = http('POST', C01, conflict_body)
     print(f'[conflict] status={st2b}')
     assert st2b == 409, f'conflict expected 409 got {st2b}'
@@ -118,7 +136,8 @@ def main():
     cur.execute("DELETE FROM cps_initial_review_item WHERE task_id=%s", (task_id,))
     cur.execute("DELETE FROM cps_initial_review_result WHERE task_id=%s", (task_id,))
     cur.execute("DELETE FROM cps_initial_review_task WHERE id=%s", (task_id,))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     print('J0-E2E-RESULT: PASS')
 
 if __name__ == '__main__':

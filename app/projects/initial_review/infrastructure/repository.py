@@ -63,6 +63,35 @@ class InitialReviewRepository:
         result = await session.execute(stmt)
         return bool(result.rowcount)
 
+    async def history_versions(
+        self, session, issue_id: str, before_version_no: int
+    ) -> list[dict]:
+        """同 issue 早期已完成版本的提交文本（A6 历史比对数据源，升序）。
+
+        只取 COMPLETED 行（FAILED/TIMEOUT 版本不代表业务认可的基线文本）；
+        input_snapshot 已剥离附件 base64，三文本字段完整。
+        """
+        rows = await session.execute(
+            select(AgentInitialReviewExec)
+            .where(AgentInitialReviewExec.issue_id == issue_id)
+            .where(AgentInitialReviewExec.version_no < before_version_no)
+            .where(AgentInitialReviewExec.status == "COMPLETED")
+            .order_by(AgentInitialReviewExec.version_no.asc())
+        )
+        out: list[dict] = []
+        for row in rows.scalars():
+            snap = row.input_snapshot or {}
+            out.append(
+                {
+                    "reason": snap.get("reason") or "",
+                    "short_term_measure": snap.get("short_term_measure") or "",
+                    "long_term_measure": snap.get("long_term_measure") or "",
+                    "version_no": row.version_no,
+                    "submission_id": row.submission_id,
+                }
+            )
+        return out
+
     async def sweep_expired(self, session, now: datetime | None = None) -> int:
         """惰性清理：RUNNING 且 deadline 已过的行 → FAILED/TIMEOUT（进程崩溃兜底）。"""
         now = now or datetime.now(UTC)

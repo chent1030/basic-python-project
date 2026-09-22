@@ -331,6 +331,53 @@ class JavaCallbackConfig(BaseModel):
     retry_backoff_seconds: list[float] = Field(default_factory=lambda: [30.0, 60.0])
 
 
+class SimilarityThresholdConfig(BaseModel):
+    """A6 雷同性阈值(D-05:W3 前用业务样本校准;默认值为人工抽检估计)。
+
+    - same_*:同单 short_term_measure ↔ long_term_measure(PRD §29.1 强制);
+    - history_*:vs 同 issue 历史版本(波次 2 任务书扩展,PRD 未确认——见设计文档);
+    - score ≥ fail → FAIL;≥ warn → WARN;否则 PASS。
+    """
+
+    same_fail: float = 0.90
+    same_warn: float = 0.75
+    history_fail: float = 0.85
+    history_warn: float = 0.70
+
+
+class ModelCheckConfig(BaseModel):
+    """A7/A8 模型检查配置(qwen 系,OpenAI 兼容模式)。
+
+    - enabled=False 或 provider 未配置 → 检查 SKIPPED(不伪造结论);
+    - field_budget_seconds:单次模型调用(含一次重试)的预算,90s 可配;
+      3 字段 + 1 次视觉 ≈ 4×90s < deadline 480s,Java 接管阈值 10min 不变;
+    - max_images_per_side:送入视觉模型的每侧照片上限(防 prompt 膨胀)。
+    """
+
+    enabled: bool = True
+    provider: str = "qwen"
+    text_model: str = "qwen-plus"
+    vision_model: str = "Qwen2.5-VL-7B-Instruct"
+    temperature: float = 0.1
+    field_budget_seconds: float = 90.0
+    max_images_per_side: int = 4
+
+
+class RustFSConfig(BaseModel):
+    """object_key 附件的 RustFS(S3 兼容)读取配置。
+
+    默认值对齐 Java 侧 application.yml 的 cps.storage.*(admin/Ct0520.0402
+    为本地开发默认,与 Java 仓一致;生产用 env 覆盖):
+    env CPS_STORAGE_ENDPOINT / CPS_STORAGE_ACCESS_KEY / CPS_STORAGE_SECRET_KEY
+    / CPS_STORAGE_BUCKET 优先于 yaml(见 infrastructure/config.py)。
+    """
+
+    endpoint: str = "http://127.0.0.1:9000"
+    access_key: str = "admin"
+    secret_key: str = "Ct0520.0402"
+    bucket: str = "cps-attachments"
+
+
 class InitialReviewConfig(BaseModel):
     """初审任务执行配置。
 
@@ -338,6 +385,9 @@ class InitialReviewConfig(BaseModel):
     """
 
     deadline_seconds: float = 480.0
+    similarity: SimilarityThresholdConfig = Field(default_factory=SimilarityThresholdConfig)
+    model_check: ModelCheckConfig = Field(default_factory=ModelCheckConfig)
+    rustfs: RustFSConfig = Field(default_factory=RustFSConfig)
 
 
 class CpsAgentConfig(BaseModel):

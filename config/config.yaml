@@ -187,6 +187,24 @@ harness:
 cps_agent:
   initial_review:
     deadline_seconds: 480          # 整任务 wall-clock 8 分钟(<10min 留 Java 接管余量)
+    similarity:                    # A6 雷同性阈值(D-05:W3 前业务样本校准,默认=人工抽检估计)
+      same_fail: 0.90              # 同单 short↔long ≥0.90 → FAIL
+      same_warn: 0.75              # 同单 ≥0.75 → WARN
+      history_fail: 0.85           # vs 同 issue 历史版本 ≥0.85 → FAIL(任务书扩展,PRD 未确认)
+      history_warn: 0.70
+    model_check:                   # A7/A8 模型检查(qwen 系);enabled=false → SKIPPED 不伪造
+      enabled: true
+      provider: qwen               # 对应 llm.providers 的 key(local.yaml 配置)
+      text_model: "qwen-plus"
+      vision_model: "Qwen2.5-VL-7B-Instruct"
+      temperature: 0.1
+      field_budget_seconds: 90.0   # 单次模型调用(含重试一次)预算;4×90s < 480s
+      max_images_per_side: 4       # 送视觉模型每侧照片上限
+    rustfs:                        # object_key 附件读取;env CPS_STORAGE_* 优先(对齐 Java)
+      endpoint: "http://127.0.0.1:9000"
+      access_key: "admin"          # 本地开发默认(与 Java application.yml 一致)
+      secret_key: "Ct0520.0402"
+      bucket: "cps-attachments"
   java_callback:
     base_url: "http://127.0.0.1:8080"   # env CPS_JAVA_CALLBACK_BASE_URL 优先
     path: "/api/callbacks/initial-review/result"

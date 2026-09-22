@@ -26,10 +26,12 @@ from sqlalchemy.exc import IntegrityError
 
 from app.harness.kernel.domain.models import digest
 from app.models.agent_initial_review import AgentInitialReviewExec
+from app.projects.initial_review.application.check_pipeline import CheckPipeline
 from app.projects.initial_review.domain.models import RectificationReviewRequest
-from app.projects.initial_review.domain.text_rules import (
-    TEXT_RULES_MODEL_VERSION,
-    check_rectification_texts,
+from app.projects.initial_review.domain.text_rules import check_rectification_texts
+from app.projects.initial_review.domain.verdicts import (
+    aggregate_overall,
+    composite_model_version,
 )
 from app.projects.initial_review.infrastructure.callback import (
     JavaCallbackClient,
@@ -57,7 +59,13 @@ class CheckRunnerError(Exception):
     """检查执行期异常（→ FAILED + error_code=CHECK_ERROR）。"""
 
 
-CheckRunner = Callable[[AgentInitialReviewExec], Awaitable[tuple[dict, dict, str]]]
+#: 检查执行器：(执行行, 原始请求|None) → (text_checks, model_checks, overall)。
+#  request 仅为首次执行可得（base64 附件原文在内存）；进程崩溃/重放路径 request=None，
+#  base64 附件届时如实记 SKIPPED/DEGRADED（object_key 模式可从快照重放）。
+CheckRunner = Callable[
+    [AgentInitialReviewExec, "RectificationReviewRequest | None"],
+    Awaitable[tuple[dict, dict, str]],
+]
 CallbackDispatcher = Callable[[Awaitable[None]], None]
 
 
@@ -71,6 +79,9 @@ class InitialReviewService:
         clock: Clock | None = None,
         check_runner: CheckRunner | None = None,
         callback_dispatcher: CallbackDispatcher | None = None,
+        model_client: Any | None = None,
+        rustfs_fetcher: Any | None = None,
+        history_loader: Any | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._callback = callback_client
@@ -79,6 +90,12 @@ class InitialReviewService:
         self._check_runner: CheckRunner = check_runner or self._default_check_runner
         self._dispatch: CallbackDispatcher = callback_dispatcher or self._default_dispatch
         self._repo = InitialReviewRepository()
+        self._pipeline = CheckPipeline(
+            settings,
+            model_client=model_client,
+            rustfs=rustfs_fetcher,
+            history_loader=history_loader,
+        )
 
     # ------------------------------------------------------------ C-01 提交 ----
 
@@ -134,7 +151,7 @@ class InitialReviewService:
 
         # RUNNING（新建或此前进程崩溃遗留）→ 执行；终态 → 原样返回（幂等重放）
         if existing_status == "RUNNING" or (created and existing_status is None):
-            await self._execute(task_id)
+            await self._execute(task_id, request=request)
 
         row = await self._reload(task_id)
         assert row is not None
@@ -142,7 +159,9 @@ class InitialReviewService:
 
     # -------------------------------------------------------------- 执行链 ----
 
-    async def _execute(self, task_id: str) -> AgentInitialReviewExec | None:
+    async def _execute(
+        self, task_id: str, *, request: RectificationReviewRequest | None = None
+    ) -> AgentInitialReviewExec | None:
         row = await self._reload(task_id)
         if row is None or row.status != "RUNNING":
             return row
@@ -152,7 +171,7 @@ class InitialReviewService:
             async with asyncio.timeout(max(remaining, 0.0)):
                 # 保证至少一个挂起点：纯同步体也能被 timeout 打断（Python 3.11 语义）
                 await asyncio.sleep(0)
-                text_checks, model_checks, overall = await self._check_runner(row)
+                text_checks, model_checks, overall = await self._check_runner(row, request)
         except TimeoutError:
             logger.warning("initial review %s exceeded wall-clock deadline", task_id)
             finished = await self._finish(
@@ -180,7 +199,7 @@ class InitialReviewService:
             task_id,
             status="COMPLETED",
             overall=overall,
-            model_version=TEXT_RULES_MODEL_VERSION,
+            model_version=composite_model_version(model_checks),
             text_checks=text_checks,
             model_checks=model_checks,
         )
@@ -190,9 +209,14 @@ class InitialReviewService:
         return await self._reload(task_id)
 
     async def _default_check_runner(
-        self, row: AgentInitialReviewExec
+        self, row: AgentInitialReviewExec, request: RectificationReviewRequest | None
     ) -> tuple[dict, dict, str]:
-        """确定性规则先行（§3.4 毫秒级）；视觉/语义为 NOT_IMPLEMENTED 占位。"""
+        """波次 2 全量检查：确定性规则（毫秒级）→ A6/A7/A8 管线 → A9 聚合。
+
+        - 模型客户端未装配（单测）或不可用 → 对应检查 SKIPPED+原因，不伪造；
+        - overall 聚合见 verdicts.aggregate_overall（任一 FAIL→PROBLEM 等）；
+        - 聚合说明（PARTIAL 原因）随 model_checks.aggregate_note 落库并进回调。
+        """
         snapshot = row.input_snapshot or {}
         text_checks = check_rectification_texts(
             reason=snapshot.get("reason") or "",
@@ -200,39 +224,11 @@ class InitialReviewService:
             long_term_measure=snapshot.get("long_term_measure") or "",
         )
         serialized = {name: fc.to_dict() for name, fc in text_checks.items()}
-        model_checks = {
-            "image_compare": {
-                "implementation_status": "NOT_IMPLEMENTED",
-                "pending": "线 A6（视觉对比模型）",
-            },
-            "measure_similarity": {
-                "implementation_status": "NOT_IMPLEMENTED",
-                "pending": "线 A8（措施雷同检测）",
-            },
-            "text_validity": {
-                "implementation_status": "NOT_IMPLEMENTED",
-                "pending": "线 A7（语义有效性）",
-            },
-        }
-        overall = self._overall(serialized, model_checks)
+        model_checks = await self._pipeline.run(snapshot, request)
+        overall, note = aggregate_overall(serialized, model_checks)
+        if note:
+            model_checks["aggregate_note"] = note
         return serialized, model_checks, overall
-
-    @staticmethod
-    def _overall(text_checks: dict, model_checks: dict) -> str:
-        """PASS/PARTIAL/PROBLEM（对齐 Java cps_initial_review_result.overall）。
-
-        口径：任一已实现检查 FAIL → PROBLEM；
-        否则存在未实现检查（NOT_IMPLEMENTED）→ PARTIAL（部分完成，不伪造通过）；
-        全部通过且无缺失 → PASS。
-        """
-        any_fail = any(not fc.get("valid", False) for fc in text_checks.values())
-        if any_fail:
-            return "PROBLEM"
-        all_implemented = all(
-            item.get("implementation_status") != "NOT_IMPLEMENTED"
-            for item in model_checks.values()
-        )
-        return "PASS" if all_implemented else "PARTIAL"
 
     # ------------------------------------------------------------ C-02 回调 ----
 
@@ -240,7 +236,7 @@ class InitialReviewService:
         row = await self._reload(task_id)
         if row is None or row.status == "RUNNING":  # pragma: no cover - 防御
             return
-        payload = build_callback_payload(row, row.text_checks)
+        payload = build_callback_payload(row)
         ok, attempts, last_error = await self._callback.send(payload)
         async with self._session_factory() as session, session.begin():
             await self._repo.record_callback(

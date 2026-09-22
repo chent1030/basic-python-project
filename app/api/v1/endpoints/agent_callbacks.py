@@ -18,7 +18,8 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.api.v1.endpoints.agent_runs import FrameworkRoute, Identity
-from app.core.datasource import DatasourceManager, datasources as shared_datasources
+from app.core.datasource import DatasourceManager
+from app.core.datasource import datasources as shared_datasources
 from app.projects.initial_review.application.service import (
     InitialReviewService,
     ReplayConflict,
@@ -26,6 +27,11 @@ from app.projects.initial_review.application.service import (
 from app.projects.initial_review.domain.models import RectificationReviewRequest
 from app.projects.initial_review.infrastructure.callback import JavaCallbackClient
 from app.projects.initial_review.infrastructure.config import load_initial_review_settings
+from app.projects.initial_review.infrastructure.model_client import (
+    DashScopeModelClient,
+    RustFSObjectFetcher,
+)
+from app.projects.initial_review.infrastructure.repository import InitialReviewRepository
 
 router = APIRouter(prefix="/agent", tags=["agent-initial-review"], route_class=FrameworkRoute)
 
@@ -45,10 +51,20 @@ def initial_review_service(request: Request) -> InitialReviewService:
                 detail="postgres_primary 数据源未配置，初审服务不可用",
             ) from None
         settings = load_initial_review_settings()
+        repo = InitialReviewRepository()
+
+        async def load_history(issue_id: str, version_no: int) -> list[dict]:
+            """A6 历史比对：读本库同 issue 早期 COMPLETED 版本（独立会话，不占执行事务）。"""
+            async with session_factory() as session:
+                return await repo.history_versions(session, issue_id, version_no)
+
         service = InitialReviewService(
             session_factory=session_factory,
             callback_client=JavaCallbackClient(settings),
             settings=settings,
+            model_client=DashScopeModelClient(settings.model_check),
+            rustfs_fetcher=RustFSObjectFetcher(settings.rustfs),
+            history_loader=load_history,
         )
         request.app.state.initial_review_service = service
     return service
