@@ -12,6 +12,7 @@ from app.api.v1.endpoints import (
     cps,
     doc_review,
     examples,
+    inspection_plans,
     items,
     tasks,
     weekly_reports,
@@ -31,3 +32,4 @@ api_router.include_router(cps.router)
 api_router.include_router(construction_plan_review.router)
 api_router.include_router(agent_callbacks.router)
 api_router.include_router(weekly_reports.router)
+api_router.include_router(inspection_plans.router)
