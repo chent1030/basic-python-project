@@ -211,3 +211,15 @@ cps_agent:
     timeout_seconds: 10.0
     max_retries: 2                 # 技术重试 ≤2(30s/60s 退避)
     retry_backoff_seconds: [30.0, 60.0]
+  # 周报项目（C1-C6 / §21 / 设计 §3.3 + §4）
+  # sched_enabled / report_types / rustfs_bucket 默认由 env 覆盖：
+  #   CPS_WEEKLY_REPORT_SCHED_ENABLED  ：false 关闭调度(开发机默认)；true 启动
+  #   CPS_WEEKLY_REPORT_TYPES          ：逗号分隔，默认 cps-issue-inspection,room-check
+  #   CPS_WEEKLY_REPORT_BUCKET         ：周报归档独立桶；空 → 复用 cps-attachments
+  weekly_report:
+    sched_enabled: false           # C3 — 默认关闭,生产部署置 true 启用 APScheduler
+    report_types: ["cps-issue-inspection", "room-check"]
+    rustfs_bucket: "cps-attachments"
+    cron: "0 8 * * MON"            # Asia/Shanghai
+    misfire_grace_time_seconds: 7200
+    push_unavailable_reason: "推送未配置"

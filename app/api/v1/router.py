@@ -14,6 +14,7 @@ from app.api.v1.endpoints import (
     examples,
     items,
     tasks,
+    weekly_reports,
 )
 from app.api.v1.endpoints import datasources as ds
 
@@ -29,3 +30,4 @@ api_router.include_router(agent_runs.router)
 api_router.include_router(cps.router)
 api_router.include_router(construction_plan_review.router)
 api_router.include_router(agent_callbacks.router)
+api_router.include_router(weekly_reports.router)

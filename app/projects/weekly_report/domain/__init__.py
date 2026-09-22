@@ -1,0 +1,1 @@
+"""domain 层：纯数据模型 + 协议抽象（不依赖 SQLAlchemy / httpx）。"""
