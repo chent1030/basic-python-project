@@ -5,6 +5,7 @@ Base.metadata 也不会包含该表。
 
 类似 Spring 的 @Entity 扫描,但 Python 需要显式导入触发类定义。
 """
+from app.models.agent_initial_review import AgentInitialReviewExec
 from app.models.item import Item
 
-__all__ = ["Item"]
+__all__ = ["AgentInitialReviewExec", "Item"]

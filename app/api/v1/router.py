@@ -4,11 +4,12 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    agent_callbacks,
     agent_runs,
     auth,
     chat,
-    cps,
     construction_plan_review,
+    cps,
     doc_review,
     examples,
     items,
@@ -27,3 +28,4 @@ api_router.include_router(doc_review.router)
 api_router.include_router(agent_runs.router)
 api_router.include_router(cps.router)
 api_router.include_router(construction_plan_review.router)
+api_router.include_router(agent_callbacks.router)

@@ -1,8 +1,15 @@
 providers:
-  # 请直接在 api_key 填写你的通义千问 Key；留空时模型调用会明确报错。
+  # 通义千问 Provider。
+  # ⚠️ 安全提醒(R-N2):下方 api_key 曾以明文提交进 git 历史,请尽快在
+  #    dashscope 控制台轮换;轮换后把新 key 写入环境变量 DASHSCOPE_API_KEY
+  #    (env 优先,读取逻辑见 app/harness/kernel/infrastructure/models.py
+  #    Models.create():api_key_env 命中环境变量时 yaml 值不生效),
+  #    并将 yaml 的 api_key 置空或移入 config/local.yaml(gitignore)。
+  # 用户裁决:波次 1 暂不轮换,yaml 现值保留不动。
   qwen:
     kind: openai
     base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api_key_env: "DASHSCOPE_API_KEY"   # 环境变量覆盖优先(推荐投递方式)
     api_key: "sk-e36a95a1fb79492f994d91c535d4966a"
     timeout: 120
     max_retries: 2

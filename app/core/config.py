@@ -312,6 +312,41 @@ class DocReviewConfig(BaseModel):
     max_file_size_mb: int = 30  # 单个待审核文件大小上限
 
 
+# ---------------------------------------------------------------------
+# CPS Agent 初审配置(Java 回调/任务 deadline)
+# ---------------------------------------------------------------------
+class JavaCallbackConfig(BaseModel):
+    """C-02 回调 Java 侧地址。
+
+    - base_url:env CPS_JAVA_CALLBACK_BASE_URL 优先(代码层,见
+      app/projects/initial_review/infrastructure/config.py),yaml 为默认值;
+    - path:契约固定路径 /api/callbacks/initial-review/result;
+    - 技术重试 ≤2 次,30s/60s 退避(设计 §3.1)。
+    """
+
+    base_url: str = "http://127.0.0.1:8080"
+    path: str = "/api/callbacks/initial-review/result"
+    timeout_seconds: float = 10.0
+    max_retries: int = 2
+    retry_backoff_seconds: list[float] = Field(default_factory=lambda: [30.0, 60.0])
+
+
+class InitialReviewConfig(BaseModel):
+    """初审任务执行配置。
+
+    - deadline_seconds:整任务 wall-clock 上限,480s=8 分钟(<10min 留 Java 接管余量,设计 §3.1)。
+    """
+
+    deadline_seconds: float = 480.0
+
+
+class CpsAgentConfig(BaseModel):
+    """Settings.cps_agent 节。"""
+
+    initial_review: InitialReviewConfig = Field(default_factory=InitialReviewConfig)
+    java_callback: JavaCallbackConfig = Field(default_factory=JavaCallbackConfig)
+
+
 class Settings(BaseModel):
     app: AppConfig = Field(default_factory=AppConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
@@ -326,6 +361,7 @@ class Settings(BaseModel):
     mineru: MineruConfig = Field(default_factory=MineruConfig)
     doc_review: DocReviewConfig = Field(default_factory=DocReviewConfig)
     harness: HarnessConfig = Field(default_factory=HarnessConfig)
+    cps_agent: CpsAgentConfig = Field(default_factory=CpsAgentConfig)
 
 
 # ---------- YAML deep merge ---------------------------------------------------

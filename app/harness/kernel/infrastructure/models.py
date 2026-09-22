@@ -121,6 +121,9 @@ class Models:
     def create(self, agent: Any, profile_name: str | None = None) -> BaseChatModel:
         snapshot = self.snapshot(agent, profile_name)
         provider = self.config.providers[snapshot["provider"]]
+        # 凭据读取优先级:环境变量(api_key_env) > yaml api_key。
+        # 安全提醒(R-N2):yaml 明文 key 一旦入库即视为泄露,应尽快在供应商侧
+        # 轮换并改用环境变量投递(config/agents.yaml 注释同步此提醒)。
         key = os.environ.get(provider.api_key_env) if provider.api_key_env else None
         key = key or provider.api_key or None
         if provider.api_key_env and not key:

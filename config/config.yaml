@@ -178,3 +178,18 @@ doc_review:
 # ---------------------------------------------------------------------
 harness:
   session_datasource: "postgres_primary"   # session_memory 中间件存历史消息的数据源
+
+# ---------------------------------------------------------------------
+# CPS Agent 初审 —— Java 回调地址 / 任务 wall-clock deadline
+# 契约 C-02:POST {base_url}{path}(Python → Java 回传初审结果)
+# base_url 可被环境变量 CPS_JAVA_CALLBACK_BASE_URL 覆盖(env 优先,部署层口径)
+# ---------------------------------------------------------------------
+cps_agent:
+  initial_review:
+    deadline_seconds: 480          # 整任务 wall-clock 8 分钟(<10min 留 Java 接管余量)
+  java_callback:
+    base_url: "http://127.0.0.1:8080"   # env CPS_JAVA_CALLBACK_BASE_URL 优先
+    path: "/api/callbacks/initial-review/result"
+    timeout_seconds: 10.0
+    max_retries: 2                 # 技术重试 ≤2(30s/60s 退避)
+    retry_backoff_seconds: [30.0, 60.0]
