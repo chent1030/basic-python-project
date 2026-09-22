@@ -18,7 +18,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.api.v1.endpoints.agent_runs import FrameworkRoute, Identity
-from app.core.datasource import DatasourceManager
+from app.core.datasource import DatasourceManager, datasources as shared_datasources
 from app.projects.initial_review.application.service import (
     InitialReviewService,
     ReplayConflict,
@@ -34,7 +34,9 @@ def initial_review_service(request: Request) -> InitialReviewService:
     """懒建服务实例并挂 app.state（数据源在 startup 时才可用）。"""
     service = getattr(request.app.state, "initial_review_service", None)
     if service is None:
-        manager: DatasourceManager = request.app.state.datasources
+        # J0 联调修正：DatasourceManager 是模块级单例（app/main.py 同源导入），
+        # 不在 app.state 上；原先读 request.app.state.datasources 会 KeyError。
+        manager: DatasourceManager = shared_datasources
         try:
             session_factory = manager.get_session_factory("postgres_primary")
         except KeyError:
