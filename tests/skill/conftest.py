@@ -1,13 +1,12 @@
-"""记忆体系测试基建（I 线）。
+"""记忆/覆盖体系测试基建（I 线）。
 
 要点：
 - SQLite 内存库 + Base.metadata.create_all（pgvector 在 sqlite 退化为 JSON 字符串）；
 - EmbeddingClient 用 HashPlaceholderEmbedding（SHA256 → 1024-dim 归一化），确定性高；
 - MemoryRepository 走 session_factory 注入；Java 客户端 FakeJavaClient 拉取模拟分页；
+- coverage_* fixtures 与 memory_* 共存，独立 sqlite 引擎，避免 PG-only 字段干扰；
 """
 from __future__ import annotations
-
-from typing import Any
 
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -43,6 +42,23 @@ async def memory_repository(memory_session_factory) -> MemoryRepository:
 @pytest_asyncio.fixture
 async def embedding_client() -> HashPlaceholderEmbedding:
     return HashPlaceholderEmbedding(dim=1024)
+
+
+@pytest_asyncio.fixture
+async def coverage_engine():
+    """独立 sqlite 引擎 + create_all coverage 体系表（含 memory_metric_snapshot）。"""
+    engine = create_async_engine("sqlite+aiosqlite://")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield engine
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def coverage_session_factory(coverage_engine):
+    """Async session factory → CoverageRepository 用。"""
+    factory = async_sessionmaker(coverage_engine, expire_on_commit=False)
+    return factory
 
 
 class FakeJavaClient:
@@ -91,4 +107,6 @@ __all__ = [
     "memory_session_factory",
     "embedding_client",
     "FakeJavaClient",
+    "coverage_engine",
+    "coverage_session_factory",
 ]

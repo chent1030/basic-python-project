@@ -19,8 +19,11 @@ from app.api.v1.endpoints import (
     tasks,
     weekly_reports,
 )
+from app.api.v1.endpoints import (
+    datasources as ds,
+)
+from app.skill.coverage.api import coverage_router
 from app.skill.memory.api import memory_router
-from app.api.v1.endpoints import datasources as ds
 
 api_router = APIRouter()
 api_router.include_router(items.router)
@@ -39,3 +42,4 @@ api_router.include_router(inspection_plans.router)
 api_router.include_router(room_checks.router)
 api_router.include_router(speech.router)
 api_router.include_router(memory_router)
+api_router.include_router(coverage_router)
