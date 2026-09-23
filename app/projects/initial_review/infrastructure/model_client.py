@@ -287,15 +287,22 @@ class RustFSObjectFetcher:
             f"SignedHeaders={signed_headers}, Signature={signature}"
         )
         async with httpx.AsyncClient(transport=self._transport) as client:
-            resp = await client.get(
-                str(url),
-                headers={
-                    "Authorization": authorization,
-                    "x-amz-date": amz_date,
-                    "x-amz-content-sha256": payload_hash,
-                },
-                timeout=30.0,
-            )
+            try:
+                resp = await client.get(
+                    str(url),
+                    headers={
+                        "Authorization": authorization,
+                        "x-amz-date": amz_date,
+                        "x-amz-content-sha256": payload_hash,
+                    },
+                    timeout=30.0,
+                )
+            except httpx.TransportError as exc:
+                # TCP 级失败（连接拒绝/超时等）与 HTTP≠200 同等对待：
+                # 包成 ModelCallError → 管线记 DEGRADED 不伪造，绝不裸抛 500
+                raise ModelCallError(
+                    f"RustFS GET {object_key} 连接失败: {type(exc).__name__}: {exc}"
+                ) from exc
         if resp.status_code != 200:
             raise ModelCallError(
                 f"RustFS GET {object_key} → HTTP {resp.status_code}: {resp.text[:120]}"

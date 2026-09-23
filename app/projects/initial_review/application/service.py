@@ -194,6 +194,17 @@ class InitialReviewService:
             if finished:
                 self._dispatch(self._deliver_callback(task_id))
             return await self._reload(task_id)
+        except Exception as exc:  # 兜底：任何意外异常不得 500 / 卡 RUNNING 被误标 TIMEOUT
+            logger.exception("initial review %s unexpected runner failure", task_id)
+            finished = await self._finish(
+                task_id,
+                status="FAILED",
+                error_code="CHECK_ERROR",
+                error=f"意外异常：{type(exc).__name__}: {exc}",
+            )
+            if finished:
+                self._dispatch(self._deliver_callback(task_id))
+            return await self._reload(task_id)
 
         finished = await self._finish(
             task_id,
