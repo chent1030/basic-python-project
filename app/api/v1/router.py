@@ -14,6 +14,7 @@ from app.api.v1.endpoints import (
     examples,
     inspection_plans,
     items,
+    room_checks,
     tasks,
     weekly_reports,
 )
@@ -33,3 +34,4 @@ api_router.include_router(construction_plan_review.router)
 api_router.include_router(agent_callbacks.router)
 api_router.include_router(weekly_reports.router)
 api_router.include_router(inspection_plans.router)
+api_router.include_router(room_checks.router)
