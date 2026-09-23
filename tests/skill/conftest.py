@@ -15,6 +15,9 @@ import app.models  # noqa: F401  # 注册全部 ORM 到 Base.metadata
 from app.db.base import Base
 from app.skill.memory.infrastructure.embedding_client import HashPlaceholderEmbedding
 from app.skill.memory.infrastructure.repository import MemoryRepository
+from app.skill.procedural_memory.infrastructure.repository import (
+    DispatchPatternORM,
+)
 
 
 @pytest_asyncio.fixture
@@ -59,6 +62,24 @@ async def coverage_session_factory(coverage_engine):
     """Async session factory → CoverageRepository 用。"""
     factory = async_sessionmaker(coverage_engine, expire_on_commit=False)
     return factory
+
+
+@pytest_asyncio.fixture
+async def procedural_session_factory(coverage_engine):
+    """Procedural 仓储 session factory（复用 coverage_engine + create_all）。"""
+    factory = async_sessionmaker(coverage_engine, expire_on_commit=False)
+    return factory
+
+
+@pytest_asyncio.fixture
+async def effect_session_factory(coverage_engine):
+    """Effect 仓储 session factory（复用 coverage_engine + create_all）。"""
+    factory = async_sessionmaker(coverage_engine, expire_on_commit=False)
+    return factory
+
+
+# 占位 import——确保 ``DispatchPatternORM`` 在 ``Base.metadata`` 注册
+_ = DispatchPatternORM
 
 
 class FakeJavaClient:

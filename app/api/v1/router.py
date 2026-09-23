@@ -23,7 +23,9 @@ from app.api.v1.endpoints import (
     datasources as ds,
 )
 from app.skill.coverage.api import coverage_router
+from app.skill.effect_evaluation.api import effect_router
 from app.skill.memory.api import memory_router
+from app.skill.procedural_memory.api import procedural_router
 
 api_router = APIRouter()
 api_router.include_router(items.router)
@@ -43,3 +45,5 @@ api_router.include_router(room_checks.router)
 api_router.include_router(speech.router)
 api_router.include_router(memory_router)
 api_router.include_router(coverage_router)
+api_router.include_router(procedural_router)
+api_router.include_router(effect_router)
