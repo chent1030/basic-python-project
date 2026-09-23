@@ -345,6 +345,10 @@ class InitialReviewService:
 
     @staticmethod
     def _submit_response(row: AgentInitialReviewExec, *, replayed: bool) -> dict[str, Any]:
+        # 波次 7 语义澄清（Java 联调观察项）:replayed=True 表示「该幂等键下
+        # 行**已存在**」（本次请求未创建新行）——含 RUNNING/终态在途重放;
+        # 它**不**区分「首次创建」与「并发竞态下 UNIQUE 兜底复用既有行」。
+        # 即:行存在 ≠ 本请求首建;需要严格首建判定时看 replayed=False。
         return {
             "review_task_ref": row.task_id,
             "task_id": row.task_id,

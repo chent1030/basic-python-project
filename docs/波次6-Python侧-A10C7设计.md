@@ -43,7 +43,7 @@
 
 | 契约 | 端点 | 锁定内容 |
 |---|---|---|
-| C-01 | POST /agent/rectifications | 响应 6 键 {review_task_ref,task_id,status,overall,deadline_at,replayed}；首建/重放/409 异参三态 |
+| C-01 | POST /agent/rectifications | 响应 6 键 {review_task_ref,task_id,status,overall,deadline_at,replayed}；首建/重放/409 异参三态。波次 7 澄清：`replayed=True`＝「该幂等键下行已存在」（含 RUNNING 在途重放与并发 UNIQUE 兜底复用），**行存在≠本请求首建**；严格首建判定看 `replayed=False` |
 | C-03 | GET …/rectifications/{task_id} | 16 键含 text_checks/model_checks/callback_status；text_checks 内层**短键** {reason,short_term,long_term}；callback_status∈{PENDING,SUCCESS,FAILED}；404 |
 | C-04 | POST /agent/room-checks/judge | 15 键；stage_trace 是 dict{type_match,content_judge}（非 list）；502 → detail{error_code,message} |
 | C-05 | GET /agent/weekly-reports | 外层 5 键 + items[] 13 键（在 §4 E2E 内联冻结） |

@@ -104,9 +104,12 @@ def load_initial_review_settings(env: dict[str, str] | None = None) -> InitialRe
     ir = cfg.initial_review
     mc = ir.model_check
     rs = ir.rustfs
+    # 波次 7:model_check.enabled 支持 None=未配置;initial_review 自身未配时
+    # 维持既有默认 True 契约(C-04 的独立回退链不经过此处,见 room_checks/config.py)。
+    yaml_enabled = mc.enabled if mc.enabled is not None else True
     enabled_raw = env.get(ENV_MODEL_CHECK_ENABLED)
     enabled = (
-        mc.enabled if enabled_raw is None
+        yaml_enabled if enabled_raw is None
         else enabled_raw.strip().lower() in ("1", "true", "yes", "on")
     )
     return InitialReviewSettings(

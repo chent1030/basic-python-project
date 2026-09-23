@@ -95,12 +95,28 @@ def make_req(**overrides) -> JudgeRequest:
 
 
 def make_service(
-    *, results: list | None = None, unavailable: str | None = None, **settings_kw
+    *,
+    results: list | None = None,
+    unavailable: str | None = None,
+    vision_enabled: bool | None = None,
+    **settings_kw,
 ) -> tuple[RoomCheckJudgeService, FakeModelCheckClient, FakeFetcher]:
+    """构造被测服务。
+
+    ``vision_enabled=None``（默认）时跟随注入 settings 的 model_check.enabled
+    （复刻生产回退链的旧行为，保持既有用例语义）；显式传入则覆盖，
+    用于验证波次 7 开关独立性。
+    """
     client = FakeModelCheckClient(results=results, unavailable=unavailable)
     fetcher = FakeFetcher()
+    settings = make_settings(**settings_kw)
     svc = RoomCheckJudgeService(
-        model_client=client, fetcher=fetcher, settings=make_settings(**settings_kw)
+        model_client=client,
+        fetcher=fetcher,
+        settings=settings,
+        vision_enabled=(
+            vision_enabled if vision_enabled is not None else settings.model_check.enabled
+        ),
     )
     return svc, client, fetcher
 
@@ -260,3 +276,34 @@ async def test_photo_count_over_budget_raises_request_error() -> None:
 
 def test_derive_idempotency_key_matches_contract() -> None:
     assert derive_idempotency_key("sub-1", "item-9", 2) == "room-judge-sub-1-item-9-2"
+
+
+# --- 波次 7:视觉判定开关与 initial_review.model_check 解耦 -----------------------
+
+_PASS_CHAIN = [
+    TypeMatchSchema(type_match=True, photo_subject="地面", reason="主体为地面"),
+    ContentJudgeSchema(
+        verdict="PASS", reason="地面整洁", evidence="地面无杂物、无积水痕迹", confidence=0.9
+    ),
+]
+
+
+async def test_vision_switch_independent_off_while_model_check_on() -> None:
+    """C-04 独立关:model_check.enabled=true 但 vision.enabled=false → SKIPPED。"""
+    svc, client, _ = make_service(
+        results=list(_PASS_CHAIN), enabled=True, vision_enabled=False
+    )
+    result = await svc.judge(make_req())
+    assert result.status == STATUS_SKIPPED
+    assert "禁用" in result.reason
+    assert client.calls == []  # 完全不触模型
+
+
+async def test_vision_switch_independent_on_while_model_check_off() -> None:
+    """C-04 独立开:model_check.enabled=false 但 vision.enabled=true → 正常判定。"""
+    svc, client, _ = make_service(
+        results=list(_PASS_CHAIN), enabled=False, vision_enabled=True
+    )
+    result = await svc.judge(make_req())
+    assert result.status == STATUS_JUDGED
+    assert client.calls != []

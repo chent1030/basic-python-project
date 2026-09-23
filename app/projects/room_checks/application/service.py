@@ -14,8 +14,10 @@
 （asyncio.timeout，默认 90s，含模型自纠重试 1 次）。
 幂等：进程内 LRU+TTL 缓存（与 C-07 同款），键=``room-judge-{submissionId}-
 {itemId}-{attempt}``；技术失败不缓存（Java 可同键重试）。
-模型配置沿用 ``cps_agent.initial_review.model_check``（qwen vision）与
-``.rustfs``（env CPS_STORAGE_* 优先），enabled=false → SKIPPED。
+模型配置沿用 ``cps_agent.initial_review.model_check``（qwen vision 模型参数）与
+``.rustfs``（env CPS_STORAGE_* 优先）；**判定开关**波次 7 起独立为
+``cps_agent.room_checks.vision.enabled``（未配 → 回退旧开关
+model_check.enabled，全未配 → SKIPPED），见 infrastructure/config.py。
 """
 
 from __future__ import annotations
@@ -51,6 +53,7 @@ from app.projects.room_checks.domain.models import (
     JudgeResult,
     TypeMatchSchema,
 )
+from app.projects.room_checks.infrastructure.config import resolve_vision_enabled
 from app.projects.room_checks.infrastructure.prompts import (
     ROOM_CONTENT_JUDGE_PROMPT_VERSION,
     ROOM_TYPE_MATCH_PROMPT_VERSION,
@@ -143,7 +146,13 @@ class _JudgedOutcome:
 
 
 class RoomCheckJudgeService:
-    """C-04 服务入口（同步判定，现场等待）。"""
+    """C-04 服务入口（同步判定，现场等待）。
+
+    视觉判定开关（波次 7 独立）：``vision_enabled`` 显式注入优先（测试用）；
+    未注入时按回退链解析（env CPS_ROOM_CHECKS_VISION_ENABLED → yaml
+    room_checks.vision.enabled → 旧共享开关 → 默认关），详见
+    ``app/projects/room_checks/infrastructure/config.py``。
+    """
 
     def __init__(
         self,
@@ -151,11 +160,23 @@ class RoomCheckJudgeService:
         model_client: VisionModelClient | None = None,
         fetcher: PhotoFetcher | None = None,
         settings: InitialReviewSettings | None = None,
+        vision_enabled: bool | None = None,
     ) -> None:
         self._settings = settings or load_initial_review_settings()
+        if vision_enabled is not None:
+            # 显式注入(测试/装配冒烟):不读全局配置,保证可测性
+            self._vision_enabled = vision_enabled
+            self._vision_source = "显式注入 vision_enabled"
+        else:
+            self._vision_enabled, self._vision_source = resolve_vision_enabled()
         self._model_client = model_client
         self._fetcher = fetcher
         self._cache = _ResultCache()
+
+    @property
+    def vision_enabled(self) -> bool:
+        """C-04 视觉判定是否启用（独立于 C-01 initial_review.model_check）。"""
+        return self._vision_enabled
 
     # -- 惰性装配（测试注入 Fake；生产首次调用时装配真实客户端） ------------
     @property
@@ -190,8 +211,10 @@ class RoomCheckJudgeService:
             )
 
         # 前置条件不具备 → SKIPPED（不伪造判定，A7 原则；结果可缓存重放）
-        if not self._settings.model_check.enabled:
-            return self._finish_skipped(req, "模型检查已显式禁用（model_check.enabled=false）")
+        if not self._vision_enabled:
+            return self._finish_skipped(
+                req, f"模型检查已显式禁用（{self._vision_source}）"
+            )
         rustfs_reason = self._settings.rustfs.unavailable_reason
         if rustfs_reason:
             return self._finish_skipped(req, f"照片无法获取：{rustfs_reason}")

@@ -349,12 +349,15 @@ class ModelCheckConfig(BaseModel):
     """A7/A8 模型检查配置(qwen 系,OpenAI 兼容模式)。
 
     - enabled=False 或 provider 未配置 → 检查 SKIPPED(不伪造结论);
+      波次 7 起 enabled 支持 None=「未配置」:initial_review 自身未配时按
+      默认 True 处理(维持既有契约);room_checks 侧则继续向下回退到自己的
+      开关(见 RoomChecksConfig,「全部未配 → 关」);
     - field_budget_seconds:单次模型调用(含一次重试)的预算,90s 可配;
       3 字段 + 1 次视觉 ≈ 4×90s < deadline 480s,Java 接管阈值 10min 不变;
     - max_images_per_side:送入视觉模型的每侧照片上限(防 prompt 膨胀)。
     """
 
-    enabled: bool = True
+    enabled: bool | None = None  # None=未配置(initial_review 侧默认 True)
     provider: str = "qwen"
     text_model: str = "qwen-plus"
     vision_model: str = "Qwen2.5-VL-7B-Instruct"
@@ -390,6 +393,39 @@ class InitialReviewConfig(BaseModel):
     rustfs: RustFSConfig = Field(default_factory=RustFSConfig)
 
 
+class RoomChecksVisionConfig(BaseModel):
+    """C-04 辅房点检视觉判定独立开关(波次 7,清单⑥)。
+
+    - enabled=None(未配置)→ 不独立决策,回退旧开关
+      ``initial_review.model_check.enabled``(老配置仍生效,同开同关时代部署不受影响);
+    - 显式 true/false → 仅控制 C-04 视觉判定,不影响 C-01 初审;
+    - env ``CPS_ROOM_CHECKS_VISION_ENABLED`` 优先于 yaml(部署层覆盖)。
+    """
+
+    enabled: bool | None = None  # None=未配置→回退旧开关
+
+
+class RoomChecksConfig(BaseModel):
+    """Settings.cps_agent.room_checks 节(C-04 辅房点检)。
+
+    模型参数(provider/vision_model/预算等)沿用 initial_review.model_check,
+    本节点只承载 C-04 专属配置——当前仅视觉判定独立开关。
+    """
+
+    vision: RoomChecksVisionConfig = Field(default_factory=RoomChecksVisionConfig)
+
+
+class AsrSwitchConfig(BaseModel):
+    """C-06 语音转写独立开关(波次 7,清单⑥)。
+
+    - enabled=None(未配置)→ 回退旧开关 ``speech.enabled``(老配置仍生效);
+    - 显式 true/false → 仅控制 C-06 ASR,与 C-01/C-04 互不影响;
+    - env ``CPS_SPEECH_ASR_ENABLED`` 优先于 yaml。
+    """
+
+    enabled: bool | None = None  # None=未配置→回退 speech.enabled
+
+
 class SpeechConfig(BaseModel):
     """F1 语音转写配置(契约 C-06 speech-to-text,D-03 三字段)。
 
@@ -397,10 +433,13 @@ class SpeechConfig(BaseModel):
       (DashScope qwen3-asr-flash,音频 ≤10MB/≤5min,与表单语音备注场景匹配);
     - provider 引用 ``llm.providers`` 的 key 取 base_url/api_key;base_url/api_key
       可在本节点覆盖(ASR 专用网关);未配置 → SKIPPED 不伪造;
-    - language 空=自动检测(最小参数集,兼容 NewAPI 网关);非空传 asr_options.language。
+    - language 空=自动检测(最小参数集,兼容 NewAPI 网关);非空传 asr_options.language;
+    - enabled 为旧开关(波次 7 前唯一入口):None=未配置;新开关 ``asr.enabled``
+      未配置时回退到本值;两者都未配 → 关闭(SKIPPED,不伪造)。
     """
 
-    enabled: bool = True
+    enabled: bool | None = None  # 旧开关;None=未配置→回退链见 asr.enabled
+    asr: AsrSwitchConfig = Field(default_factory=AsrSwitchConfig)
     provider: str = "qwen"  # 对应 llm.providers 的 key(local.yaml 配置)
     model: str = "qwen3-asr-flash"  # 备选 qwen-audio-3.0-asr-flash(同为同步 OpenAI 兼容)
     base_url: str = ""  # 可选覆盖;空 → llm.providers[provider].base_url
@@ -415,6 +454,7 @@ class CpsAgentConfig(BaseModel):
 
     initial_review: InitialReviewConfig = Field(default_factory=InitialReviewConfig)
     java_callback: JavaCallbackConfig = Field(default_factory=JavaCallbackConfig)
+    room_checks: RoomChecksConfig = Field(default_factory=RoomChecksConfig)
     speech: SpeechConfig = Field(default_factory=SpeechConfig)
 
 

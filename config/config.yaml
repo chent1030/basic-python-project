@@ -193,10 +193,14 @@ cps_agent:
       history_fail: 0.85           # 与同问题历史提交 ≥0.85 → FAIL（换皮重提）
       history_warn: 0.70           # 与历史 ≥0.70 → WARN
     model_check:                   # A7/A8 模型检查(qwen 系);enabled=false → SKIPPED 不伪造
-      enabled: true
+      enabled: true                # 波次 7 起仅控制 C-01 初审(C-04 见 room_checks.vision)
       provider: qwen               # 对应 llm.providers 的 key(local.yaml 配置)
       text_model: "qwen-plus"
-      vision_model: "Qwen2.5-VL-7B-Instruct"
+      # 波次 7 真实冒烟发现：原 Qwen2.5-VL-7B-Instruct 在当前 DashScope 账号
+      # 404 model_not_found（j7 冒烟实录），换 OpenAI 兼容且已验证可调的
+      # qwen-vl-plus（探测 qwen-vl-max 亦可）。config/agents.yaml 同名模型属
+      # agent 框架线，遗留待另一线处理。
+      vision_model: "qwen-vl-plus"
       temperature: 0.1
       field_budget_seconds: 90.0   # 单次模型调用(含重试一次)预算;4×90s < 480s
       max_images_per_side: 4       # 送视觉模型每侧照片上限
@@ -211,11 +215,24 @@ cps_agent:
     timeout_seconds: 10.0
     max_retries: 2                 # 技术重试 ≤2(30s/60s 退避)
     retry_backoff_seconds: [30.0, 60.0]
+  # 辅房点检（B6/C-04 照片判定）——波次 7 起开关独立（清单⑥）。
+  # 模型参数沿用 initial_review.model_check（provider/vision_model/预算）；
+  # 视觉判定开关回退链：env CPS_ROOM_CHECKS_VISION_ENABLED > 下面的
+  # room_checks.vision.enabled > 旧共享开关（env CPS_INITIAL_REVIEW_MODEL_CHECK_ENABLED
+  # / initial_review.model_check.enabled）> 全未配默认 false（SKIPPED 不伪造）。
+  # 只配旧开关的既有部署行为不变（老配置仍生效）。
+  room_checks:
+    vision:
+      enabled:                      # 空=未配置 → 走回退链（默认跟旧开关 model_check.enabled）
   # 语音转写（F1/C-06 speech-to-text，D-03 三字段：原因/短期措施/长期措施）
   # ASR 走 OpenAI 兼容 chat/completions input_audio 同步转写（qwen3-asr-flash，
   # 音频 ≤10MB/≤5min）；未配置 → SKIPPED 不伪造（对齐 A7/B6 原则）。
+  # 开关独立（波次 7，清单⑥）：env CPS_SPEECH_ASR_ENABLED > speech.asr.enabled
+  # > 旧 speech.enabled > 全未配默认 false；只配 speech.enabled 的部署行为不变。
   speech:
-    enabled: true                  # false → 端点返回 SKIPPED（不调 ASR）
+    enabled: true                  # 旧开关（仍生效）；新开关 asr.enabled 未配时回退到这里
+    asr:
+      enabled:                     # 空=未配置 → 回退上方 enabled（独立开关，显式 true/false 生效）
     provider: qwen                 # 引用 llm.providers 的 key（取 base_url/api_key）
     model: "qwen3-asr-flash"       # 备选 qwen-audio-3.0-asr-flash（同为同步 OpenAI 兼容）
     base_url: ""                   # 可选覆盖；空 → llm.providers[provider].base_url

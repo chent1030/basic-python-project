@@ -138,7 +138,12 @@ class WeeklyReportService:
         report_type: str,
         window: ReportWindow | None = None,
     ) -> dict[str, Any]:
-        """执行一次完整编排；返回结果摘要字典（不含敏感字段）。"""
+        """执行一次完整编排；返回结果摘要字典（不含敏感字段）。
+
+        返回口径（波次 7）：只要存在对应运行行（COMPLETED/FAILED/同窗口已
+        COMPLETED 跳过），都带 ``run_id`` + ``run_no``；advisory-lock /
+        并发 UNIQUE 兜底两类「无本请求对应行」的跳过则不带（无法诚实给出）。
+        """
         win = window or compute_window()
         async with self._session_factory() as session:
             # ---- 1) 单实例锁（PG advisory；sqlite 跳过）----
@@ -170,6 +175,7 @@ class WeeklyReportService:
                     "skipped": True,
                     "reason": "同窗口已 COMPLETED",
                     "run_id": latest.run_id,
+                    "run_no": latest.run_no,  # 波次 7:补 run_no(Java 首跑判定免查列表)
                     "report_type": report_type,
                     "period": win.period_iso(),
                 }
@@ -257,6 +263,7 @@ class WeeklyReportService:
                 await session.commit()
             return {
                 "run_id": run_id,
+                "run_no": next_run_no,  # 波次 7:补 run_no
                 "report_type": report_type,
                 "period": win.period_iso(),
                 "status": "FAILED",
@@ -281,6 +288,7 @@ class WeeklyReportService:
             logger.warning("weekly_report 归档失败 run_id=%s err=%s", run_id, exc)
             return {
                 "run_id": run_id,
+                "run_no": next_run_no,  # 波次 7:补 run_no
                 "report_type": report_type,
                 "period": win.period_iso(),
                 "status": "FAILED",
@@ -341,6 +349,7 @@ class WeeklyReportService:
 
         return {
             "run_id": run_id,
+            "run_no": next_run_no,  # 波次 7:补 run_no(与 C-05 列表口径一致)
             "report_type": report_type,
             "period": win.period_iso(),
             "window_start": win.window_start.isoformat(),

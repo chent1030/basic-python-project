@@ -46,6 +46,8 @@ async def test_run_once_full_path_completes_and_marks_push_unconfigured(
     assert result["status"] == STATUS_COMPLETED
     assert result["push_status"] == PUSH_STATUS_UNCONFIGURED
     assert "weekly-reports/cps-issue-inspection/" in result["archive_object_key"]
+    # 波次 7:COMPLETED 终态返回带 run_no(Java 首跑判定免查列表)
+    assert result["run_no"] == 1
 
     # 持久化行落库
     from sqlalchemy import select
@@ -97,6 +99,8 @@ async def test_run_once_idempotent_skips_when_already_completed(
     # 同窗口第二次应跳过（latest_in_window == COMPLETED）
     assert second.get("skipped") is True
     assert "COMPLETED" in second.get("reason", "")
+    # 波次 7:跳过返回也带 run_no（指向已存在的那次运行）
+    assert second["run_no"] == first["run_no"]
 
 
 @pytest.mark.asyncio
@@ -119,6 +123,7 @@ async def test_run_once_marks_failed_when_uploader_unavailable(
     )
     assert result["status"] == STATUS_FAILED
     assert "RustFS" in result["error"]
+    assert result["run_no"] == 1  # 波次 7:FAILED 行已落库,返回带 run_no
 
     # 行落库为 FAILED + error_code = ARCHIVE_UNAVAILABLE
     from sqlalchemy import select
