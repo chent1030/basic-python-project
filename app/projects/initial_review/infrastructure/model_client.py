@@ -19,6 +19,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 
@@ -63,20 +64,93 @@ _ERROR_SNIPPET = 200
 
 
 def extract_json_object(text: str) -> dict[str, Any]:
-    """从模型输出容错提取首个 JSON 对象（剥 ```json 围栏 / 前后杂讯）。"""
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        cleaned = cleaned.strip("`")
-        if cleaned.lower().startswith("json"):
-            cleaned = cleaned[4:]
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start < 0 or end <= start:
-        raise ValueError("输出中未找到 JSON 对象")
-    obj = json.loads(cleaned[start : end + 1])
-    if not isinstance(obj, dict):
-        raise ValueError("输出不是 JSON 对象")
-    return obj
+    """从模型输出容错提取首个 JSON 对象（波次 8 多级降级，J 线转交 #2）。
+
+    降级顺序（任一命中即返回）：
+    1. 整段直接解析（模型规整输出）；
+    2. markdown 代码栅栏内容（```json … ``` 或裸 ```，含栅栏后仍有文字的形态）；
+    3. 平衡花括号扫描截取首个完整对象（容忍首尾非 JSON 文本、JSON 后附说明）；
+    4. 修复后重试 1-3：单引号键值 → 双引号、尾逗号剔除。
+
+    全部失败 → ValueError（上层回喂重试 1 次，两次无效 → DEGRADED 规则兜底）。
+    """
+    errors: list[str] = []
+    for candidate in _json_candidates(text):
+        for repaired in _repair_chain(candidate):
+            try:
+                obj = json.loads(repaired)
+            except ValueError as exc:
+                errors.append(f"{type(exc).__name__}: {str(exc)[:80]}")
+                continue
+            if isinstance(obj, dict):
+                return obj
+            errors.append("顶层不是 JSON 对象")
+    detail = f"（尝试 {len(errors)} 个候选片段均失败）" if errors else ""
+    raise ValueError(f"输出中未找到 JSON 对象{detail}")
+
+
+def _json_candidates(text: str) -> list[str]:
+    """产出候选 JSON 片段：整段 → 各栅栏块 → 平衡扫描的首个对象。"""
+    candidates: list[str] = []
+    stripped = text.strip()
+    if stripped:
+        candidates.append(stripped)
+    fence_bodies = re.findall(r"```[A-Za-z0-9_-]*[ \t]*\r?\n?(.*?)```", text, re.DOTALL)
+    for body in fence_bodies:
+        body = body.strip()
+        if body:
+            candidates.append(body)
+    # 平衡花括号扫描：首个 depth 归零的片段（容忍前后杂讯；栅栏外的裸 JSON 也能取到）
+    for source in (stripped, *fence_bodies):
+        fragment = _first_balanced_object(source)
+        if fragment:
+            candidates.append(fragment)
+    return candidates
+
+
+def _first_balanced_object(text: str) -> str | None:
+    """扫描首个平衡的 ``{…}`` 片段（字符串/转义感知；截到最外层闭合即停）。"""
+    start = text.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    return None
+
+
+def _repair_chain(candidate: str) -> list[str]:
+    """候选片段的修复链：原样 → 单引号转双引号 → 再剔除尾逗号。"""
+    chain = [candidate]
+    if "'" not in candidate:
+        return chain
+    double_quoted = re.sub(
+        r"'((?:[^'\\]|\\.)*)'", r'"\1"', candidate
+    )
+    if double_quoted != candidate:
+        chain.append(double_quoted)
+        no_trailing_comma = re.sub(r",(\s*[}\]])", r"\1", double_quoted)
+        if no_trailing_comma != double_quoted:
+            chain.append(no_trailing_comma)
+    return chain
 
 
 class DashScopeModelClient:

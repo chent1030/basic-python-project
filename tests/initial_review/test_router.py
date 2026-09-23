@@ -15,6 +15,7 @@ from app.api.v1.endpoints.agent_callbacks import router as agent_router
 from app.api.v1.endpoints.agent_runs import Principal, principal
 from tests.initial_review.conftest import (
     VALID_TEXT,
+    drain,
     make_request,
     make_service,
     make_session_factory,
@@ -93,4 +94,74 @@ async def test_validation_error_422() -> None:
 async def test_forbidden_without_cps_admin_role() -> None:
     async with await make_client(roles=["cps_employee"]) as client:
         resp = await client.post("/api/v1/agent/rectifications", json=body())
+        assert resp.status_code == 403
+
+
+# -------------------------- 波次 8（J 线转交 #4）：POST /{task_id}/callback/re-push ----
+
+
+async def test_repush_round_trip_after_terminal() -> None:
+    """提交到终态 → 重推 200，返回发送结果（pushed=true，attempts 累计）。"""
+    sf = await make_session_factory()
+    service, _, pending = make_service(sf)
+    app = _build_app(service)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        created = await client.post("/api/v1/agent/rectifications", json=body())
+        assert created.status_code == 202, created.text
+        await drain(pending)  # 等初次回调投递完成并入账 attempts，再重推
+        resp = await client.post(
+            "/api/v1/agent/rectifications/cps-rectify-ISS-001-v1/callback/re-push"
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["pushed"] is True
+        assert data["callback_status"] == "SENT"
+        assert data["callback_attempts"] == 2  # 初次 1 + 重推 1
+
+
+async def test_repush_unknown_task_404() -> None:
+    async with await make_client() as client:
+        resp = await client.post(
+            "/api/v1/agent/rectifications/cps-rectify-NOPE-v1/callback/re-push"
+        )
+        assert resp.status_code == 404
+
+
+async def test_repush_running_row_409() -> None:
+    from tests.initial_review.conftest import insert_exec_row
+
+    sf = await make_session_factory()
+    service, _, _ = make_service(sf)
+    task_id = await insert_exec_row(sf, issue_id="ISS-003", status="RUNNING")
+    app = _build_app(service)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.post(f"/api/v1/agent/rectifications/{task_id}/callback/re-push")
+        assert resp.status_code == 409
+        assert "仍在执行" in resp.json()["detail"]
+
+
+async def test_repush_budget_exhausted_429() -> None:
+    from tests.initial_review.conftest import insert_exec_row
+
+    sf = await make_session_factory()
+    service, _, _ = make_service(sf)
+    task_id = await insert_exec_row(sf, issue_id="ISS-004", callback_attempts=20)
+    app = _build_app(service)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.post(f"/api/v1/agent/rectifications/{task_id}/callback/re-push")
+        assert resp.status_code == 429
+        assert "上限" in resp.json()["detail"]
+
+
+async def test_repush_forbidden_without_cps_admin_role() -> None:
+    async with await make_client(roles=["cps_employee"]) as client:
+        resp = await client.post(
+            "/api/v1/agent/rectifications/cps-rectify-ISS-001-v1/callback/re-push"
+        )
         assert resp.status_code == 403

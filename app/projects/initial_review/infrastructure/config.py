@@ -83,6 +83,9 @@ class InitialReviewSettings:
     callback_timeout_seconds: float
     callback_max_retries: int  # 技术重试 ≤2（30s/60s 退避，设计 §3.1:157）
     callback_backoff_seconds: tuple[float, ...]
+    #: 波次 8（J 线转交 #4）：手动回调重推的累计尝试次数上限（防滥用配额）。
+    #: callback_attempts 为累计口径（正常投递+手动重推都计数），达到上限 → 429。
+    callback_manual_push_max_total_attempts: int = 20
     similarity: SimilaritySettings = field(
         default_factory=lambda: SimilaritySettings(0.90, 0.75, 0.85, 0.70)
     )

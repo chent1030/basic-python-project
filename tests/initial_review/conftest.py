@@ -110,10 +110,48 @@ def make_request(**over: Any) -> RectificationReviewRequest:
     return RectificationReviewRequest(**values)
 
 
+async def insert_exec_row(
+    session_factory,
+    *,
+    issue_id: str = "ISS-002",
+    version_no: int = 1,
+    status: str = "COMPLETED",
+    fingerprint: str = "f" * 64,
+    callback_attempts: int = 0,
+) -> str:
+    """直接落一行执行注册表（不走 submit 链路），供 RUNNING/配额边界测试用。
+
+    task_id/submission_id 按 issue_id 推导，返回 task_id 方便断言。
+    """
+    from datetime import timedelta
+
+    from app.models.agent_initial_review import AgentInitialReviewExec
+
+    task_id = f"cps-rectify-{issue_id}-v{version_no}"
+    now = naive_utc_now()
+    async with session_factory() as session, session.begin():
+        session.add(
+            AgentInitialReviewExec(
+                task_id=task_id,
+                issue_id=issue_id,
+                version_no=version_no,
+                submission_id=f"SUB-2026-{issue_id[-3:]}",
+                status=status,
+                started_at=now,
+                deadline_at=now + timedelta(seconds=480),
+                fingerprint=fingerprint,
+                input_snapshot={},
+                callback_attempts=callback_attempts,
+            )
+        )
+    return task_id
+
+
 __all__ = [
     "VALID_TEXT",
     "FakeCallbackClient",
     "drain",
+    "insert_exec_row",
     "make_request",
     "make_service",
     "make_session_factory",

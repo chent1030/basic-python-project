@@ -200,9 +200,11 @@ def test_deadline_config_margin_below_java_takeover_window() -> None:
     assert 600 - cfg.deadline_seconds >= 120  # 接管余量 ≥2 分钟
 
 
-async def test_replay_after_sweep_returns_failed_no_rerun_no_callback() -> None:
-    """迟到重放仅留痕：已被惰性扫描判 FAILED/TIMEOUT 的任务，同键重放
-    返回原终态（replayed=True），不再执行、不再发回调（不翻转已接管终态）。"""
+async def test_replay_after_sweep_returns_failed_no_rerun_re_sends_callback() -> None:
+    """迟到重放仅留痕不重跑：已被惰性扫描判 FAILED/TIMEOUT 的任务，同键重放
+    返回原终态（replayed=True）、不再执行；波次 8 起补发一次回调（幂等键同，
+    Java 去重）——正是 J 线转交 #3 的场景：Java 未等到回调靠 C-03 轮询兜底前，
+    重发 C-01 即可立即拿到终态回调，不必等 600s 超时。"""
     sf = await make_session_factory()
     service, callback, pending = make_service(sf)
     req = make_request()
@@ -229,7 +231,10 @@ async def test_replay_after_sweep_returns_failed_no_rerun_no_callback() -> None:
     await drain(pending)
     assert resp["status"] == "FAILED"  # 原终态原样返回
     assert resp["replayed"] is True
-    assert len(callback.payloads) == 0  # 不重发回调（Java 已接管/兜底轮询）
+    # 波次 8（J 线转交 #3）：提交时已终态 → 补发一次回调（幂等键同，Java 去重），
+    # Java 重投 C-01 即拿到终态回调，不再依赖 600s 超时兜底
+    assert len(callback.payloads) == 1
+    assert callback.payloads[0]["idempotency_key"] == "initial-review-result-cps-rectify-ISS-001-v1"
 
 
 async def test_replay_running_row_keeps_original_deadline() -> None:
@@ -267,8 +272,9 @@ async def test_replay_running_row_keeps_original_deadline() -> None:
     assert resp["deadline_at"] == (t0 + timedelta(seconds=480)).isoformat()
 
 
-async def test_completed_replay_sends_no_second_callback() -> None:
-    """幂等重放不重发回调：COMPLETED 终态同键重放返回缓存结果，回调只发一次。"""
+async def test_completed_replay_re_sends_callback_idempotent() -> None:
+    """终态重放补发回调（波次 8 J 线转交 #3）：COMPLETED 终态同键重放返回缓存结果，
+    并补发一次回调（幂等键相同，Java 端按键去重 → 重复投递无副作用）。"""
     sf = await make_session_factory()
     service, callback, pending = make_service(sf)
 
@@ -279,7 +285,9 @@ async def test_completed_replay_sends_no_second_callback() -> None:
 
     assert first["status"] == second["status"] == "COMPLETED"
     assert second["replayed"] is True
-    assert len(callback.payloads) == 1
+    assert len(callback.payloads) == 2  # 终态迁移 1 次 + 重放补发 1 次
+    keys = {p["idempotency_key"] for p in callback.payloads}
+    assert keys == {"initial-review-result-cps-rectify-ISS-001-v1"}  # 同键 → Java 去重
 
 
 async def test_late_completion_cannot_resurrect_swept_row() -> None:

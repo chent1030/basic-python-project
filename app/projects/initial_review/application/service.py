@@ -59,6 +59,27 @@ class CheckRunnerError(Exception):
     """检查执行期异常（→ FAILED + error_code=CHECK_ERROR）。"""
 
 
+class TaskNotTerminal(Exception):
+    """回调重推目标行仍在跑（→ HTTP 409）。"""
+
+    def __init__(self, task_id: str, status: str):
+        super().__init__(f"任务 {task_id} 仍在执行（{status}），仅终态行可重推回调（409）")
+        self.task_id = task_id
+        self.status = status
+
+
+class CallbackPushBudgetExhausted(Exception):
+    """回调重推配额耗尽：累计尝试次数达上限（→ HTTP 429）。"""
+
+    def __init__(self, task_id: str, attempts: int, limit: int):
+        super().__init__(
+            f"任务 {task_id} 回调累计尝试 {attempts} 次已达上限 {limit}，拒绝重推（429）"
+        )
+        self.task_id = task_id
+        self.attempts = attempts
+        self.limit = limit
+
+
 #: 检查执行器：(执行行, 原始请求|None) → (text_checks, model_checks, overall)。
 #  request 仅为首次执行可得（base64 附件原文在内存）；进程崩溃/重放路径 request=None，
 #  base64 附件届时如实记 SKIPPED/DEGRADED（object_key 模式可从快照重放）。
@@ -155,6 +176,15 @@ class InitialReviewService:
 
         row = await self._reload(task_id)
         assert row is not None
+        if not created and existing_status != "RUNNING":
+            # 波次 8（J 线转交 #3）：重放命中「提交时已终态」的行 → 立即补发一次
+            # 回调后再返回结果。回调 Body 幂等键 = initial-review-result-{task_id}，
+            # Java 端按键去重，重复投递无副作用。注意门槛必须是「本次提交前已终态」
+            # （existing_status），不能用重载后的 row.status——重放 RUNNING 行由
+            # 执行链接手跑到终态时，终态迁移已自然回调一次，再补发就成重复回调。
+            # 覆盖故障模式：回调重试耗尽/投递成功但 Java 侧未消费时，Java 重投
+            # C-01 即可拿到补发回调，不再依赖 600s 超时兜底。
+            self._dispatch(self._deliver_callback(task_id))
         return self._submit_response(row, replayed=not created)
 
     # -------------------------------------------------------------- 执行链 ----
@@ -259,6 +289,51 @@ class InitialReviewService:
             )
         if not ok:
             logger.error("C-02 callback for %s failed after retries: %s", task_id, last_error)
+
+    # -------------------------------------------------- 波次 8：手动回调重推 ----
+    # J 线转交 #4：回调重试耗尽后任务悬挂（如 Java 端 400/宕机期间），管理员按
+    # task_ref 对**终态**行手动重发回调；行仍在跑 → 409；累计尝试达配额 → 429。
+
+    async def repush_callback(self, task_id: str) -> dict[str, Any] | None:
+        """手动重推一次回调（同步等待发送结果并返回；None=行不存在）。
+
+        配额口径：callback_attempts 记**累计**尝试次数（正常投递 + 手动重推），
+        达到 ``callback_manual_push_max_total_attempts`` 上限后拒绝，防滥用。
+        """
+        row = await self._reload(task_id)
+        if row is None:
+            return None
+        if row.status == "RUNNING":
+            raise TaskNotTerminal(task_id, row.status)
+        previous_attempts = row.callback_attempts or 0
+        limit = self._settings.callback_manual_push_max_total_attempts
+        if previous_attempts >= limit:
+            raise CallbackPushBudgetExhausted(task_id, previous_attempts, limit)
+
+        payload = build_callback_payload(row)
+        ok, attempts, last_error = await self._callback.send(payload)
+        total_attempts = previous_attempts + attempts
+        callback_status = "SENT" if ok else "FAILED"
+        async with self._session_factory() as session, session.begin():
+            await self._repo.record_callback(
+                session,
+                task_id,
+                status=callback_status,
+                attempts=total_attempts,
+                last_error=last_error,
+            )
+        if not ok:
+            logger.error(
+                "manual callback re-push for %s failed after retries: %s", task_id, last_error
+            )
+        return {
+            "task_id": task_id,
+            "status": row.status,
+            "pushed": ok,
+            "callback_status": callback_status,
+            "callback_attempts": total_attempts,
+            "last_error": last_error,
+        }
 
     @staticmethod
     def _default_dispatch(coro: Awaitable[None]) -> None:

@@ -147,6 +147,32 @@ def rustfs_mock(payload: bytes = b"pngbytes") -> RustFSObjectFetcher:
         ('前置说明 {"verdict": "PASS"} 后缀', True),
         ("完全不是 JSON", False),
         ('{"verdict": 1}', True),  # 提取层只管 JSON 形；类型校验由 pydantic 层负责
+        # ---- 波次 8（J 线转交 #2）：真实失败样本形态的容错降级 ----
+        # 栅栏后仍有尾注（模型爱在代码块外加一句「以上是结果」）
+        ('```json\n{"verdict": "PASS"}\n```\n以上 JSON 即判定结果。', True),
+        # 栅栏语言标记大写
+        ('```JSON\n{"verdict": "PASS"}\n```', True),
+        # 裸栅栏（无语言标记）
+        ('```\n{"verdict": "PASS"}\n```', True),
+        # 前后都有大段说明文字（平衡扫描取首个完整对象）
+        (
+            "好的，我来分析。首先看整改原因：\n第一点内容具体。\n\n"
+            '{"verdict": "PASS", "reason": "内容具体相关"}\n\n'
+            "综上，该字段判定通过。",
+            True,
+        ),
+        # 键值用单引号（部分模型/温度漂移时出现）
+        ("{'verdict': 'PASS', 'reason': '内容具体'}", True),
+        # 单引号 + 尾逗号叠加
+        ("{'verdict': 'PASS', 'reason': '内容具体',}", True),
+        # JSON 对象后紧跟另一个代码块说明（取首个平衡对象，不吃到杂讯）
+        ('{"verdict": "WARN"}\n```\n补充说明文字\n```', True),
+        # 值内含花括号/引号转义（字符串感知扫描不被内层 } 骗到）
+        ('说明 {"verdict": "FAIL", "reason": "输出形如 {x}"} 尾注', True),
+        # 只有数组没有对象 → 仍失败（调用方回喂重试）
+        ('["verdict", "PASS"]', False),
+        # 对象被截断（deadline 到点截断输出）→ 失败
+        ('{"verdict": "PASS", "reason": "截', False),
     ],
 )
 def test_extract_json_object(text: str, has_verdict: bool) -> None:
@@ -172,7 +198,7 @@ async def test_text_validity_implemented_via_fake_client() -> None:
     assert tv["implementation_status"] == "IMPLEMENTED"
     assert all(f["status"] == "IMPLEMENTED" for f in tv["fields"].values())
     assert all(f["verdict"] == "PASS" for f in tv["fields"].values())
-    assert tv["prompt_version"] == "text-validity/qwen-plus@1"
+    assert tv["prompt_version"] == "text-validity/qwen-plus@2"
     assert len(fake.calls) == 3 and all(c["kind"] == "text" for c in fake.calls)
 
 

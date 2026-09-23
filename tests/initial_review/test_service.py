@@ -10,13 +10,17 @@ from sqlalchemy import func, select
 
 from app.models.agent_initial_review import AgentInitialReviewExec
 from app.projects.initial_review.application.service import (
+    CallbackPushBudgetExhausted,
     InitialReviewService,
     ReplayConflict,
+    TaskNotTerminal,
 )
 from app.projects.initial_review.infrastructure.callback import JavaCallbackClient
 from tests.initial_review.conftest import (
     VALID_REASON,
+    FakeCallbackClient,
     drain,
+    insert_exec_row,
     make_request,
     make_service,
     make_session_factory,
@@ -86,13 +90,56 @@ async def test_submit_idempotent_replay_same_ref_single_row() -> None:
     assert first["review_task_ref"] == second["review_task_ref"]
     assert second["replayed"] is True
     assert second["status"] == "COMPLETED"
-    # 唯一索引兜底：仍只有一行；终态重放不再触发回调
+    # 唯一索引兜底：仍只有一行
     async with sf() as session:
         count = (
             await session.execute(select(func.count()).select_from(AgentInitialReviewExec))
         ).scalar_one()
     assert count == 1
-    assert len(callback.payloads) == 1
+    # 波次 8（J 线转交 #3）：终态行重放 → 补发一次回调（同幂等键，Java 去重）
+    assert len(callback.payloads) == 2
+    assert callback.payloads[0]["idempotency_key"] == callback.payloads[1]["idempotency_key"]
+
+
+async def test_replay_terminal_row_re_sends_callback_without_reexecute() -> None:
+    """终态行重放不重跑检查（check_runner 只执行一次），只补发回调。"""
+    sf = await make_session_factory()
+    runs: list[str] = []
+
+    async def counting_runner(row, request):  # type: ignore[no-untyped-def]
+        runs.append(row.task_id)
+        return {}, {}, "PARTIAL"
+
+    service, callback, pending = make_service(sf, check_runner=counting_runner)
+
+    await service.submit(make_request())
+    await drain(pending)
+    resp = await service.submit(make_request())
+    await drain(pending)
+
+    assert runs == ["cps-rectify-ISS-001-v1"]  # 未重跑
+    assert resp["replayed"] is True
+    assert resp["status"] == "COMPLETED"
+    assert len(callback.payloads) == 2
+
+
+async def test_replay_running_row_executes_normally_single_callback() -> None:
+    """行仍在跑（进程崩溃遗留 RUNNING）→ 维持现状：走执行链，终态时恰好一次回调。"""
+    from tests.initial_review.conftest import insert_exec_row
+
+    sf = await make_session_factory()
+    service, callback, pending = make_service(sf)
+    request = make_request(issue_id="ISS-002", submission_id="SUB-2026-002")
+    task_id = await insert_exec_row(
+        sf, issue_id="ISS-002", status="RUNNING", fingerprint=service._fingerprint(request)
+    )
+
+    resp = await service.submit(request)
+    await drain(pending)
+
+    assert resp["review_task_ref"] == task_id
+    assert resp["status"] == "COMPLETED"  # 执行链接手遗留 RUNNING 行
+    assert len(callback.payloads) == 1  # 不额外补发（未终态前维持现状）
 
 
 async def test_submit_same_key_different_params_conflict() -> None:
@@ -268,3 +315,81 @@ async def test_callback_all_retries_failed() -> None:
 
 async def test_task_ref_formula() -> None:
     assert InitialReviewService.task_ref("ISS-9", 3) == "cps-rectify-ISS-9-v3"
+
+
+# --------------------------------------------- 波次 8（J 线转交 #4）：手动重推 ----
+
+
+async def test_repush_callback_sends_and_accumulates_attempts() -> None:
+    sf = await make_session_factory()
+    service, callback, pending = make_service(sf)
+    await service.submit(make_request())
+    await drain(pending)  # 初次投递 attempts=1
+
+    result = await service.repush_callback("cps-rectify-ISS-001-v1")
+
+    assert result is not None
+    assert result["pushed"] is True
+    assert result["callback_status"] == "SENT"
+    assert result["callback_attempts"] == 2  # 累计口径：初次 1 + 重推 1
+    assert len(callback.payloads) == 2
+    assert callback.payloads[1]["idempotency_key"] == "initial-review-result-cps-rectify-ISS-001-v1"
+    async with sf() as session:
+        row = (
+            await session.execute(
+                select(AgentInitialReviewExec).where(
+                    AgentInitialReviewExec.task_id == "cps-rectify-ISS-001-v1"
+                )
+            )
+        ).scalar_one()
+    assert row.callback_status == "SENT"
+    assert row.callback_attempts == 2
+
+
+async def test_repush_callback_failed_send_records_failure() -> None:
+    """重推发送失败（Java 仍故障）：如实记 FAILED/last_error，attempts 照常累计。"""
+    sf = await make_session_factory()
+    service, callback, pending = make_service(sf, callback=FakeCallbackClient(failures=99))
+    await service.submit(make_request())
+    await drain(pending)  # 初次投递也失败（attempts=1, FAILED）
+
+    result = await service.repush_callback("cps-rectify-ISS-001-v1")
+
+    assert result is not None
+    assert result["pushed"] is False
+    assert result["callback_status"] == "FAILED"
+    assert result["callback_attempts"] == 2
+    assert "simulated failure" in (result["last_error"] or "")
+    async with sf() as session:
+        row = (
+            await session.execute(select(AgentInitialReviewExec))
+        ).scalar_one()
+    assert row.callback_status == "FAILED"
+
+
+async def test_repush_unknown_task_returns_none() -> None:
+    sf = await make_session_factory()
+    service, _, _ = make_service(sf)
+    assert await service.repush_callback("cps-rectify-nope-v1") is None
+
+
+async def test_repush_running_row_rejected() -> None:
+    sf = await make_session_factory()
+    service, callback, _ = make_service(sf)
+    task_id = await insert_exec_row(sf, issue_id="ISS-003", status="RUNNING")
+
+    with pytest.raises(TaskNotTerminal):
+        await service.repush_callback(task_id)
+    assert callback.payloads == []  # 未发送
+
+
+async def test_repush_budget_exhausted_rejected() -> None:
+    """累计尝试达上限（默认 20）→ 429 语义（配额防滥用），不再发送。"""
+    sf = await make_session_factory()
+    service, callback, _ = make_service(sf, settings=make_settings())
+    task_id = await insert_exec_row(sf, issue_id="ISS-004", callback_attempts=20)
+
+    with pytest.raises(CallbackPushBudgetExhausted) as exc_info:
+        await service.repush_callback(task_id)
+    assert exc_info.value.limit == 20
+    assert callback.payloads == []
