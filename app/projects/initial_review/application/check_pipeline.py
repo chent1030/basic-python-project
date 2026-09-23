@@ -122,6 +122,9 @@ class CheckPipeline:
         }
         issue_snapshot = snapshot.get("issue_snapshot") or {}
         issue_context = build_issue_context(issue_snapshot)
+        # 波次 9 · FR-09 长期记忆：AI 初审前由 InitialReviewService._execute 写入的历史
+        # 同类问题提示（JSON 字符串）。空 / None → 不拼进 prompt（v3 prompt 行为）。
+        historical_hints_json = snapshot.get("historical_hints_json")
 
         similarity = await self._measure_similarity(
             texts,
@@ -129,8 +132,8 @@ class CheckPipeline:
             version_no=int(snapshot.get("version_no") or 0),
             issue_snapshot=issue_snapshot,
         )
-        text_validity = await self._text_validity(texts, issue_context)
-        image_compare = await self._image_compare(snapshot, request, issue_context)
+        text_validity = await self._text_validity(texts, issue_context, historical_hints_json)
+        image_compare = await self._image_compare(snapshot, request, issue_context, historical_hints_json)
         return {
             "measure_similarity": similarity,
             "text_validity": text_validity,
@@ -188,7 +191,12 @@ class CheckPipeline:
 
     # --------------------------------------------------------- A8 语义有效性
 
-    async def _text_validity(self, texts: dict[str, str], issue_context: str) -> dict[str, Any]:
+    async def _text_validity(
+        self,
+        texts: dict[str, str],
+        issue_context: str,
+        historical_hints: str | None = None,
+    ) -> dict[str, Any]:
         budget = self._settings.model_check.field_budget_seconds
         fields: dict[str, dict[str, Any]] = {}
         for field in FIELD_ORDER:
@@ -204,7 +212,10 @@ class CheckPipeline:
                 )
                 continue
             prompt = build_text_validity_prompt(
-                field_name=field, text=text, issue_context=issue_context
+                field_name=field,
+                text=text,
+                issue_context=issue_context,
+                historical_hints=historical_hints,
             )
             try:
                 async with asyncio.timeout(budget):
@@ -236,6 +247,7 @@ class CheckPipeline:
         snapshot: dict[str, Any],
         request: Any | None,
         issue_context: str,
+        historical_hints: str | None = None,
     ) -> dict[str, Any]:
         base: dict[str, Any] = {
             "implementation_status": SKIPPED_STATUS,
@@ -285,6 +297,7 @@ class CheckPipeline:
             after_count=len(after_urls),
             issue_context=issue_context,
             submitted_readings=readings,
+            historical_hints=historical_hints,
         )
         try:
             async with asyncio.timeout(self._settings.model_check.field_budget_seconds):

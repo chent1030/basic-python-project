@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 
-TEXT_VALIDITY_PROMPT_VERSION = "text-validity/qwen-plus@2"
-IMAGE_COMPARE_PROMPT_VERSION = "image-compare/qwen-vl@2"
+TEXT_VALIDITY_PROMPT_VERSION = "text-validity/qwen-plus@3"
+IMAGE_COMPARE_PROMPT_VERSION = "image-compare/qwen-vl@3"
 
 #: 波次 8（J 线转交 #2）：输出格式硬约束。联调观察到文本模型偶发输出纯说明
 #: 文字（无任何 JSON），重试后规则兜底导致逐项意见缺失。v2 起所有 prompt 末尾
@@ -15,6 +15,16 @@ IMAGE_COMPARE_PROMPT_VERSION = "image-compare/qwen-vl@2"
 _JSON_ONLY_RULE = (
     "\n【输出格式·强制】你的回复必须是且仅是一个 JSON 对象：以 {{ 开头、以 }} 结尾，"
     "禁止输出任何解释文字、前后缀或 markdown 代码栅栏。"
+)
+
+#: 波次 9（I 线记忆体系 + FR-09 长期记忆）：AI 初审提示词末尾追加「历史同类问题处理参考」
+#: 段落，由 MemoryRetrievalService.format_hints_for_prompt 生成；为空时整段省略。
+#: v3 相比 v2：增加历史提示段落（仅在 hints_json 非空时插入）。
+_HISTORICAL_HINT_PLACEHOLDER = "{hints_json}"
+HISTORICAL_HINT_SECTION = (
+    "\n【历史同类问题处理参考】（仅供参考不强制）\n"
+    + _HISTORICAL_HINT_PLACEHOLDER
+    + "\n"
 )
 
 #: 展示名（与 domain/text_validity.FIELD_LABELS 同步）
@@ -54,14 +64,15 @@ def build_issue_context(issue_snapshot: dict | None) -> str:
 
 
 def build_text_validity_prompt(
-    *, field_name: str, text: str, issue_context: str
+    *, field_name: str, text: str, issue_context: str, historical_hints: str | None = None
 ) -> str:
-    """A8 单字段语义有效性 prompt（版本 text-validity/qwen-plus@2）。
+    """A8 单字段语义有效性 prompt（版本 text-validity/qwen-plus@3）。
 
     v2：末尾附输出格式硬约束与字段示例（J 线转交 #2，结构化输出无效问题）。
+    v3（波次 9 · FR-09 长期记忆）：追加「历史同类问题处理参考」段落（hints_json 非空时插入）。
     """
     label = _FIELD_LABELS.get(field_name, field_name)
-    return (
+    prompt = (
         "你是电网设备问题整改初审助手。请判断下面这条整改提交文本是否「语义有效」。\n"
         f"【问题背景】（来自问题单快照）{issue_context}\n"
         f"【待检字段】{label}\n"
@@ -74,12 +85,17 @@ def build_text_validity_prompt(
         "答非所问或语义无法理解。\n"
         "【输出要求】给出 verdict/reason/confidence；FAIL 或 WARN 时尽量给出 problem_fragment"
         "（原文中最能体现问题的连续片段，不超过 50 字）。reason 用一句中文说明依据。"
-        + _JSON_ONLY_RULE
+    )
+    if historical_hints:
+        prompt += HISTORICAL_HINT_SECTION.replace(_HISTORICAL_HINT_PLACEHOLDER, historical_hints)
+    prompt += (
+        _JSON_ONLY_RULE
         + "\n字段与取值示例（verdict 取 PASS/WARN/FAIL 之一；confidence 为 0 到 1 的小数；"
         "problem_fragment 无则填 null）：\n"
         '{"verdict": "WARN", "reason": "一句话中文依据", "confidence": 0.8,'
         ' "problem_fragment": "原文片段或null"}'
     )
+    return prompt
 
 
 _READING_INSTRUCTION = (
@@ -94,11 +110,13 @@ def build_image_compare_prompt(
     after_count: int,
     issue_context: str,
     submitted_readings: list[dict] | None,
+    historical_hints: str | None = None,
 ) -> str:
-    """A7 前后照片比对 prompt（版本 image-compare/qwen-vl@2）。
+    """A7 前后照片比对 prompt（版本 image-compare/qwen-vl@3）。
 
     submitted_readings 非空时并入读数核对指令（一次调用完成，不另发起）。
     v2：末尾附输出格式硬约束与字段示例（J 线转交 #2）。
+    v3（波次 9 · FR-09 长期记忆）：追加「历史同类问题处理参考」段落（hints_json 非空时插入）。
     """
     prompt = (
         "你是电网设备问题整改初审助手。按顺序给出「整改前」与「整改后」的照片。\n"
@@ -112,7 +130,11 @@ def build_image_compare_prompt(
         "或整改后照片与问题背景无关。\n"
         "【输出要求】verdict/reason/confidence；evidence_before 与 evidence_after "
         "分别给出关键依据（每条一句话，说明第几张照片里看到什么）。"
-        + _JSON_ONLY_RULE
+    )
+    if historical_hints:
+        prompt += HISTORICAL_HINT_SECTION.replace(_HISTORICAL_HINT_PLACEHOLDER, historical_hints)
+    prompt += (
+        _JSON_ONLY_RULE
         + "\n字段与取值示例（verdict 取 PASS/WARN/FAIL 之一；evidence 列表每条一句话；"
         "无读数核对要求时省略 readings_observed/readings_match）：\n"
         '{"verdict": "PASS", "reason": "一句话中文依据", "confidence": 0.85,'
@@ -149,6 +171,7 @@ def extract_submitted_readings(issue_snapshot: dict | None) -> list[dict]:
 
 
 __all__ = [
+    "HISTORICAL_HINT_SECTION",
     "IMAGE_COMPARE_PROMPT_VERSION",
     "TEXT_VALIDITY_PROMPT_VERSION",
     "build_image_compare_prompt",

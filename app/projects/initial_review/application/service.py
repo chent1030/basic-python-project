@@ -103,6 +103,7 @@ class InitialReviewService:
         model_client: Any | None = None,
         rustfs_fetcher: Any | None = None,
         history_loader: Any | None = None,
+        memory_retriever: Any | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._callback = callback_client
@@ -117,6 +118,10 @@ class InitialReviewService:
             rustfs=rustfs_fetcher,
             history_loader=history_loader,
         )
+        # 波次 9 · FR-09 长期记忆：AI 初审前调用 MemoryRetrievalService 检索历史同类
+        # 问题 → 拼到 prompt v3 的 HISTORICAL_HINT_SECTION。注入失败/超时一律降级
+        # 为空（不阻断主流程，agent 永不依赖 memory）。
+        self._memory_retriever = memory_retriever
 
     # ------------------------------------------------------------ C-01 提交 ----
 
@@ -257,19 +262,70 @@ class InitialReviewService:
         - 模型客户端未装配（单测）或不可用 → 对应检查 SKIPPED+原因，不伪造；
         - overall 聚合见 verdicts.aggregate_overall（任一 FAIL→PROBLEM 等）；
         - 聚合说明（PARTIAL 原因）随 model_checks.aggregate_note 落库并进回调。
+
+        波次 9 · FR-09 长期记忆：在调用模型之前注入 ``historical_hints_json``；
+        memory 检索失败/超时 → 降级为空（不阻断主流程）。
         """
-        snapshot = row.input_snapshot or {}
+        snapshot = dict(row.input_snapshot or {})
         text_checks = check_rectification_texts(
             reason=snapshot.get("reason") or "",
             short_term_measure=snapshot.get("short_term_measure") or "",
             long_term_measure=snapshot.get("long_term_measure") or "",
         )
         serialized = {name: fc.to_dict() for name, fc in text_checks.items()}
+        # ───── FR-09 长期记忆注入点 ─────
+        snapshot["historical_hints_json"] = await self._retrieve_historical_hints(row, snapshot)
         model_checks = await self._pipeline.run(snapshot, request)
         overall, note = aggregate_overall(serialized, model_checks)
         if note:
             model_checks["aggregate_note"] = note
         return serialized, model_checks, overall
+
+    async def _retrieve_historical_hints(
+        self, row: AgentInitialReviewExec, snapshot: dict[str, Any]
+    ) -> str | None:
+        """调用 memory retriever 拿历史同类问题提示；失败/未装配 → None。
+
+        返回 prompt v3 直接可拼的 JSON 字符串（hints 为空时返回 None，上层跳过
+        HISTORICAL_HINT_SECTION）。任何异常仅记 warning，不抛、不影响主流程。
+        """
+        if self._memory_retriever is None:
+            return None
+        try:
+            issue_dto: dict[str, Any] = {
+                "id": row.issue_id,
+                "version_no": row.version_no,
+            }
+            issue_snapshot = snapshot.get("issue_snapshot") or {}
+            if isinstance(issue_snapshot, dict):
+                for k in (
+                    "category_l1_id", "category_l2_id",
+                    "factory", "area", "severity",
+                    "title", "description",
+                ):
+                    if issue_snapshot.get(k) is not None and k not in issue_dto:
+                        issue_dto[k] = issue_snapshot[k]
+            hints = await self._memory_retriever.retrieve_context_for_issue(
+                issue_dto, top_k=5
+            )
+            payload = self._memory_retriever.format_hints_for_prompt(hints)
+            logger.info(
+                "initial_review memory_retrieved task_id=%s issue_id=%s hints=%d score_total=%.3f",
+                row.task_id,
+                row.issue_id,
+                len(hints or []),
+                sum(h.score for h in (hints or [])),
+            )
+            return payload
+        except Exception as exc:  # noqa: BLE001 - memory 检索永不阻断主流程
+            logger.warning(
+                "initial_review memory retrieval failed task_id=%s issue_id=%s err=%s: %s",
+                row.task_id,
+                row.issue_id,
+                type(exc).__name__,
+                exc,
+            )
+            return None
 
     # ------------------------------------------------------------ C-02 回调 ----
 

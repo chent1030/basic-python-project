@@ -198,7 +198,7 @@ async def test_text_validity_implemented_via_fake_client() -> None:
     assert tv["implementation_status"] == "IMPLEMENTED"
     assert all(f["status"] == "IMPLEMENTED" for f in tv["fields"].values())
     assert all(f["verdict"] == "PASS" for f in tv["fields"].values())
-    assert tv["prompt_version"] == "text-validity/qwen-plus@2"
+    assert tv["prompt_version"] == "text-validity/qwen-plus@3"
     assert len(fake.calls) == 3 and all(c["kind"] == "text" for c in fake.calls)
 
 
