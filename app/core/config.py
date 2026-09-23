@@ -390,11 +390,32 @@ class InitialReviewConfig(BaseModel):
     rustfs: RustFSConfig = Field(default_factory=RustFSConfig)
 
 
+class SpeechConfig(BaseModel):
+    """F1 语音转写配置(契约 C-06 speech-to-text,D-03 三字段)。
+
+    - ASR 走 OpenAI 兼容 chat/completions 的 ``input_audio`` 同步转写
+      (DashScope qwen3-asr-flash,音频 ≤10MB/≤5min,与表单语音备注场景匹配);
+    - provider 引用 ``llm.providers`` 的 key 取 base_url/api_key;base_url/api_key
+      可在本节点覆盖(ASR 专用网关);未配置 → SKIPPED 不伪造;
+    - language 空=自动检测(最小参数集,兼容 NewAPI 网关);非空传 asr_options.language。
+    """
+
+    enabled: bool = True
+    provider: str = "qwen"  # 对应 llm.providers 的 key(local.yaml 配置)
+    model: str = "qwen3-asr-flash"  # 备选 qwen-audio-3.0-asr-flash(同为同步 OpenAI 兼容)
+    base_url: str = ""  # 可选覆盖;空 → llm.providers[provider].base_url
+    api_key: str = ""  # 可选覆盖;空 → llm.providers[provider].api_key
+    language: str = ""  # 空=自动检测;如 "zh"
+    timeout_seconds: float = 60.0  # 单次转写预算(ASR 同步调用,含网关往返)
+    max_audio_bytes: int = 10 * 1024 * 1024  # 模型上限 10MB(解码后原始字节)
+
+
 class CpsAgentConfig(BaseModel):
     """Settings.cps_agent 节。"""
 
     initial_review: InitialReviewConfig = Field(default_factory=InitialReviewConfig)
     java_callback: JavaCallbackConfig = Field(default_factory=JavaCallbackConfig)
+    speech: SpeechConfig = Field(default_factory=SpeechConfig)
 
 
 class Settings(BaseModel):

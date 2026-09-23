@@ -211,6 +211,18 @@ cps_agent:
     timeout_seconds: 10.0
     max_retries: 2                 # 技术重试 ≤2(30s/60s 退避)
     retry_backoff_seconds: [30.0, 60.0]
+  # 语音转写（F1/C-06 speech-to-text，D-03 三字段：原因/短期措施/长期措施）
+  # ASR 走 OpenAI 兼容 chat/completions input_audio 同步转写（qwen3-asr-flash，
+  # 音频 ≤10MB/≤5min）；未配置 → SKIPPED 不伪造（对齐 A7/B6 原则）。
+  speech:
+    enabled: true                  # false → 端点返回 SKIPPED（不调 ASR）
+    provider: qwen                 # 引用 llm.providers 的 key（取 base_url/api_key）
+    model: "qwen3-asr-flash"       # 备选 qwen-audio-3.0-asr-flash（同为同步 OpenAI 兼容）
+    base_url: ""                   # 可选覆盖；空 → llm.providers[provider].base_url
+    api_key: ""                    # 可选覆盖；空 → llm.providers[provider].api_key
+    language: ""                   # 空=自动检测（最小参数集）；如 "zh" 则传 asr_options
+    timeout_seconds: 60.0          # 单次转写预算
+    max_audio_bytes: 10485760      # 解码后音频字节上限（10MB，模型约束）
   # 周报项目（C1-C6 / §21 / 设计 §3.3 + §4）
   # sched_enabled / report_types / rustfs_bucket 默认由 env 覆盖：
   #   CPS_WEEKLY_REPORT_SCHED_ENABLED  ：false 关闭调度(开发机默认)；true 启动

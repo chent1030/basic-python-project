@@ -15,6 +15,7 @@ from app.api.v1.endpoints import (
     inspection_plans,
     items,
     room_checks,
+    speech,
     tasks,
     weekly_reports,
 )
@@ -35,3 +36,4 @@ api_router.include_router(agent_callbacks.router)
 api_router.include_router(weekly_reports.router)
 api_router.include_router(inspection_plans.router)
 api_router.include_router(room_checks.router)
+api_router.include_router(speech.router)
