@@ -22,6 +22,7 @@ from app.api.v1.endpoints import (
 from app.api.v1.endpoints import (
     datasources as ds,
 )
+from app.projects.room_checks.api import router as room_checks_b6_router_module
 from app.skill.coverage.api import coverage_router
 from app.skill.effect_evaluation.api import effect_router
 from app.skill.memory.api import memory_router
@@ -42,6 +43,7 @@ api_router.include_router(agent_callbacks.router)
 api_router.include_router(weekly_reports.router)
 api_router.include_router(inspection_plans.router)
 api_router.include_router(room_checks.router)
+api_router.include_router(room_checks_b6_router_module)
 api_router.include_router(speech.router)
 api_router.include_router(memory_router)
 api_router.include_router(coverage_router)
