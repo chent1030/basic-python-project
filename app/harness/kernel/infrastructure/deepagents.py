@@ -12,8 +12,9 @@ from langgraph.types import Command, interrupt
 from ..application.runtime import ExecutionContext
 from ..domain.models import AgentDefinition, Conflict, Waiting, digest
 from ..domain.reviews import resume_values
+from .guardrails import ToolGuardrailMiddleware
 from .interpreter import adapt_interpreter
-from .middleware import ExecutionAudit, current_tool_call
+from .middleware import ExecutionAudit, FallbackWatchMiddleware, current_tool_call
 from .models import Models, apply_profile
 from .store import ScopedStore
 
@@ -53,7 +54,6 @@ class DeepAgentsEngine:
         from deepagents.backends import FilesystemBackend
         from langchain.agents.middleware import (
             ModelCallLimitMiddleware,
-            ModelFallbackMiddleware,
             ToolCallLimitMiddleware,
         )
         from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -112,6 +112,7 @@ class DeepAgentsEngine:
                 tools.extend(await resources.enter_async_context(toolkit(context)))
             middleware = [
                 ExecutionAudit(context),
+                ToolGuardrailMiddleware(context, tools=tools),
                 ModelCallLimitMiddleware(
                     thread_limit=definition.max_model_calls, exit_behavior="error"
                 ),
@@ -125,11 +126,17 @@ class DeepAgentsEngine:
             ]
             if snapshot["fallbacks"]:
                 middleware.append(
-                    ModelFallbackMiddleware(
-                        *[
-                            self.models.create(definition, fallback["profile"])
+                    FallbackWatchMiddleware(
+                        context,
+                        snapshot["profile"],
+                        [
+                            (
+                                fallback["profile"],
+                                self.models.create(definition, fallback["profile"]),
+                                fallback.get("authority", {}),
+                            )
                             for fallback in snapshot["fallbacks"]
-                        ]
+                        ],
                     )
                 )
             graph = create_deep_agent(

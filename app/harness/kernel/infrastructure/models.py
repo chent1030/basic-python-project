@@ -31,6 +31,23 @@ class Provider(BaseModel):
         return self
 
 
+class ModelAuthority(BaseModel):
+    """降级回退时随能力收缩的权限档位(MODEL-04)。
+
+    回退模型通常更小/更弱:若沿用主档全部权限,弱模型将以强权限自动决策。
+    - may_auto_decide=False 的回退档位配合 agent.degrade_policy="block"
+      会把降级执行的结果转入人工审批;
+    - may_execute_external=False 声明该档位不应触发外部副作用(仅记录于
+      降级事件,供审计与后续策略使用)。
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    may_auto_decide: bool = True
+    may_execute_external: bool = True
+    may_recommend: bool = True
+
+
 class ModelProfile(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     provider: str
@@ -38,6 +55,7 @@ class ModelProfile(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
     capabilities: set[str] = Field(default_factory=lambda: {"tools", "structured_output"})
     fallbacks: tuple[str, ...] = ()
+    authority: ModelAuthority = Field(default_factory=ModelAuthority)
 
 
 class ModelConfiguration(BaseModel):
@@ -116,6 +134,7 @@ class Models:
             "max_retries": provider.max_retries,
             "fallbacks": [self.snapshot(agent, fallback) for fallback in profile.fallbacks],
             "capabilities": sorted(profile.capabilities),
+            "authority": profile.authority.model_dump(),
         }
 
     def create(self, agent: Any, profile_name: str | None = None) -> BaseChatModel:

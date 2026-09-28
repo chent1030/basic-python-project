@@ -75,3 +75,55 @@ class ExecutionAudit(AgentMiddleware):
             fields,
         )
         return result
+
+
+class FallbackWatchMiddleware(AgentMiddleware):
+    """替代 langchain 纯可用性 ModelFallbackMiddleware 的回退中间件(MODEL-04)。
+
+    差异:
+    1. 感知实际执行的是哪个回退档位, 将降级事实写入 context.degraded
+       并发出 model.degraded 事件(含该档位的 authority 档位);
+    2. 主模型成功时行为与原中间件完全一致(零降级开销)。
+
+    权限收缩的执行点不在这里: may_auto_decide=False 的档位由
+    runtime._step 的降级门(agent.degrade_policy="block")转为人工审批。
+    """
+
+    def __init__(
+        self,
+        context: Any,
+        primary_name: str,
+        fallbacks: list[tuple[str, Any, dict[str, Any]]],
+    ):
+        self.context = context
+        self.primary_name = primary_name
+        self.fallbacks = fallbacks
+        self.degraded_profile: str | None = None
+
+    async def awrap_model_call(self, request: Any, handler: Any) -> Any:
+        try:
+            return await handler(request)
+        except Exception as primary_error:
+            if not self.fallbacks:
+                raise
+            last_error = primary_error
+            for profile_name, model, authority in self.fallbacks:
+                try:
+                    request = request.override(model=model)
+                    response = await handler(request)
+                except Exception as exc:  # noqa: BLE001 - 逐档尝试直到成功或耗尽
+                    last_error = exc
+                    continue
+                self._mark(profile_name, authority)
+                return response
+            raise last_error from primary_error
+
+    def _mark(self, profile_name: str, authority: dict[str, Any]) -> None:
+        if self.degraded_profile == profile_name:
+            return
+        self.degraded_profile = profile_name
+        self.context.degraded = {"profile": profile_name, "authority": authority}
+        self.context.emit(
+            "model.degraded",
+            {"profile": profile_name, "primary": self.primary_name, "authority": authority},
+        )

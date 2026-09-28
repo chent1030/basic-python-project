@@ -152,6 +152,7 @@ class AgentDefinition:
     interrupt_on: dict[str, Any] = field(default_factory=dict)
     permissions: tuple[Any, ...] = ()
     approval: Approval = field(default_factory=Approval.none)
+    degrade_policy: Literal["allow", "block"] = "allow"
     retry: Retry = field(default_factory=Retry)
     timeout_seconds: float = 300
     recursion_limit: int = 100
@@ -225,6 +226,7 @@ class AgentDefinition:
             "handler": callable_version(self.handler),
             "interrupt_on": self.interrupt_on,
             "approval": self.approval.mode,
+            "degrade_policy": self.degrade_policy,
             "planning": self.planning,
             "general_purpose": self.general_purpose,
             "input_schema": self.input_schema.model_json_schema() if self.input_schema else None,

@@ -71,6 +71,7 @@ class ExecutionContext:
     requests: int = 0
     inherited_messages: list[Any] | None = None
     dispatch_counters: dict[str, int] = field(default_factory=dict)
+    degraded: dict[str, Any] | None = None
 
     @property
     def agents(self) -> ExecutionContext:
@@ -931,11 +932,21 @@ class Runtime:
                     )
                 finally:
                     context.release()
+            if context.degraded:
+                record["degraded"] = True
+                record["degraded_profile"] = context.degraded.get("profile")
+                record["degraded_authority"] = context.degraded.get("authority") or {}
             record.update(status="output_ready", output=result)
             self._save_invocation(scope, record, "invocation.output_ready")
-        if policy.mode == "after":
+        degrade_gate = (
+            getattr(definition, "degrade_policy", "allow") == "block"
+            and record.get("degraded")
+            and not record.get("degraded_authority", {}).get("may_auto_decide", True)
+        )
+        if policy.mode == "after" or degrade_gate:
+            gate_policy = policy if policy.mode == "after" else Approval.after()
             result = definition.validate_output(
-                self._approval(scope, path, policy, result, kind="after")
+                self._approval(scope, path, gate_policy, result, kind="after")
             )
         record.update(status="succeeded", output=result)
         self._save_invocation(scope, record, "invocation.succeeded")

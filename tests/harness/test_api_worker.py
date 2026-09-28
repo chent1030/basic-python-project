@@ -2,6 +2,7 @@ import asyncio
 
 import httpx
 import pytest
+import yaml
 from fastapi import FastAPI
 
 from app.api.v1.endpoints.agent_runs import install_error_handlers, router
@@ -9,8 +10,28 @@ from app.core.security import create_access_token, create_refresh_token
 from app.harness.kernel import AgentDefinition, Approval, Runtime, SQLiteRepository, Step, Worker
 
 
+def write_cps_config(path, internal_trust=False, trusted_networks=None):
+    """Framework tests must never read the repository business config (config/cps.yaml).
+
+    httpx.ASGITransport pins the client address to 127.0.0.1, which is inside the
+    default trusted_networks; only explicit CPS_CONFIG isolation keeps the API
+    auth surface deterministic (P0-1).
+    """
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "internal_trust": internal_trust,
+                "trusted_networks": trusted_networks if trusted_networks is not None else [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
 @pytest.fixture
-async def environment(tmp_path):
+async def environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("CPS_CONFIG", str(write_cps_config(tmp_path / "cps-test.yaml")))
     repository = SQLiteRepository(tmp_path / "state.sqlite")
     runtime = Runtime(repository, workspace_root=tmp_path / "workspaces")
     runtime.register(
@@ -75,6 +96,41 @@ async def test_api_auth_tenant_and_validation(environment):
     assert (
         await client.get(f"/agent-runs/{run_id}/events", headers=auth("other"))
     ).status_code == 403
+
+
+async def test_api_principal_trust_boundaries(environment, tmp_path, monkeypatch):
+    """P0-1: internal trust must never mint framework roles from a bare IP.
+
+    ASGITransport always presents client host 127.0.0.1, so the trusted-network
+    branch is exercised whenever trusted_networks contains 127.0.0.1/32.
+    """
+    runtime, client = environment
+    # Fixture default: no trusted networks -> unauthenticated requests are rejected.
+    assert (await client.get("/agent-runs")).status_code == 401
+    # Trusted network present but internal_trust disabled -> still no identity.
+    monkeypatch.setenv(
+        "CPS_CONFIG",
+        str(
+            write_cps_config(
+                tmp_path / "cps-off.yaml",
+                internal_trust=False,
+                trusted_networks=["127.0.0.1/32"],
+            )
+        ),
+    )
+    assert (await client.get("/agent-runs")).status_code == 401
+    # internal_trust enabled -> synthesized identity carries only CPS roles.
+    monkeypatch.setenv(
+        "CPS_CONFIG",
+        str(
+            write_cps_config(
+                tmp_path / "cps-on.yaml",
+                internal_trust=True,
+                trusted_networks=["127.0.0.1/32"],
+            )
+        ),
+    )
+    assert (await client.get("/agent-runs")).status_code == 403
 
 
 async def test_worker_approval_resume_and_event_replay(environment):

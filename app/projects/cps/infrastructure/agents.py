@@ -13,6 +13,17 @@ from app.projects.cps.domain.models import AgentInput
 
 VISUAL_AGENTS = {"issue_identification", "rectification_judgement"}
 
+# 降级权限收缩(P0-3/MODEL-04):判定类 agent 的输出会驱动派单与整改决策,
+# 模型回退到低权限档位(may_auto_decide=False)期间禁止自动通过,转人工审批;
+# 摘要类(history_analysis/report/observation)降级只影响行文质量,保持 allow。
+DEGRADE_BLOCK_AGENTS = {
+    "main",
+    "issue_identification",
+    "rectification_judgement",
+    "coverage_analysis",
+    "work_plan",
+}
+
 
 def prompt_for(agent: str) -> str:
     root = files("app.projects.cps.prompts")
@@ -143,6 +154,7 @@ def register_agents(runtime: Any) -> None:
             initial_state_factory=initial_state,
             backend_factory=readonly_workspace,
             approval=Approval.none() if agent == "observation" else Approval.after(roles=roles),
+            degrade_policy="block" if agent in DEGRADE_BLOCK_AGENTS else "allow",
             planning=False,
             general_purpose=False,
             max_model_calls=8,

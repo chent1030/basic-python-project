@@ -1,0 +1,38 @@
+# Harness tool guardrails (P0-2, standards MODEL-09/11/12/14 + SEC-16/19/21).
+# mode: warn  -> violations are audited (tool.guardrail events) but execution proceeds
+#       fail  -> violating calls are rejected with feedback the model can act on
+#       off   -> middleware disabled
+# Gray-release note: keep "warn" until a week of production events shows no false
+# positives, then switch to "fail".
+mode: warn
+similarity_cutoff: 0.6
+denied_patterns:
+  - id: shell-destructive
+    pattern: 'rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)'
+    description: recursive force delete
+  - id: shell-pipe-exec
+    pattern: '(curl|wget)[^|]{0,200}\|\s*(ba)?sh'
+    description: pipe download into shell
+  - id: sql-drop
+    pattern: 'DROP\s+(TABLE|DATABASE|SCHEMA)'
+    description: destructive SQL
+  - id: sql-truncate
+    pattern: 'TRUNCATE\s+TABLE'
+    description: destructive SQL
+  - id: markup-script-injection
+    pattern: '<script'
+    description: script tag injection
+  - id: jndi-lookup
+    pattern: '\$\{jndi:'
+    description: JNDI lookup injection
+  - id: path-traversal
+    pattern: '\.\.[\\/]\.\.[\\/]'
+    description: parent-directory traversal
+numeric_limits:
+  timeout: {min: 0, max: 600}
+  timeout_seconds: {min: 0, max: 600}
+  file_size: {min: 0, max: 10000000}
+  max_bytes: {min: 0, max: 10000000}
+  memory_mb: {min: 0, max: 4096}
+  limit: {min: 0, max: 10000}
+  max_results: {min: 0, max: 10000}

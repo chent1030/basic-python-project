@@ -1,5 +1,4 @@
 enabled: true
-internal_trust: true
 trusted_networks:
   - 127.0.0.1/32
   - ::1/128
