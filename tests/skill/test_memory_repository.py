@@ -10,7 +10,6 @@ from app.skill.memory.domain.enums import SourceTable
 from app.skill.memory.domain.models import EMBEDDING_DIM, MemoryEntry
 from app.skill.memory.infrastructure.repository import MemoryRepository
 
-
 # ---------------------------------------------------------------- helpers --
 
 
@@ -81,8 +80,12 @@ async def test_supersede_marks_old_inactive_and_links_new(memory_repository: Mem
 
 @pytest.mark.asyncio
 async def test_list_by_issue_filters(memory_repository: MemoryRepository):
-    await memory_repository.upsert_episode(_entry(source_table=SourceTable.EVENT.value, source_id=1, issue_id=10))
-    await memory_repository.upsert_episode(_entry(source_table=SourceTable.EVENT.value, source_id=2, issue_id=20))
+    await memory_repository.upsert_episode(
+        _entry(source_table=SourceTable.EVENT.value, source_id=1, issue_id=10)
+    )
+    await memory_repository.upsert_episode(
+        _entry(source_table=SourceTable.EVENT.value, source_id=2, issue_id=20)
+    )
     rows = await memory_repository.list_by_issue(issue_id=10)
     assert len(rows) == 1
     assert rows[0].source_id == 1
@@ -108,9 +111,15 @@ async def test_search_by_embedding_cosine_top_k(memory_repository: MemoryReposit
 
 @pytest.mark.asyncio
 async def test_search_by_embedding_filters(memory_repository: MemoryRepository):
-    await memory_repository.upsert_judgment(_entry(source_id=1, factory="A", area="X", category_l1_id=1))
-    await memory_repository.upsert_judgment(_entry(source_id=2, factory="B", area="X", category_l1_id=1))
-    await memory_repository.upsert_judgment(_entry(source_id=3, factory="A", area="Y", category_l1_id=1))
+    await memory_repository.upsert_judgment(
+        _entry(source_id=1, factory="A", area="X", category_l1_id=1)
+    )
+    await memory_repository.upsert_judgment(
+        _entry(source_id=2, factory="B", area="X", category_l1_id=1)
+    )
+    await memory_repository.upsert_judgment(
+        _entry(source_id=3, factory="A", area="Y", category_l1_id=1)
+    )
     query = [0.5] * EMBEDDING_DIM
     rows_a_x = await memory_repository.search_by_embedding(
         query, top_k=10, factory="A", area="X"
@@ -121,7 +130,7 @@ async def test_search_by_embedding_filters(memory_repository: MemoryRepository):
 
 @pytest.mark.asyncio
 async def test_embedding_string_round_trip():
-    from app.skill.memory.domain.models import embedding_to_str, embedding_from_str
+    from app.skill.memory.domain.models import embedding_from_str, embedding_to_str
 
     # 必须严格 1024 维（合同：embedding_to_str/from_str 守维度，不让错位污染检索索引）
     v = [0.001 * i for i in range(EMBEDDING_DIM)]
@@ -204,8 +213,12 @@ async def test_unique_constraint_source_table_source_id(
 
 @pytest.mark.asyncio
 async def test_list_patterns_recent(memory_repository: MemoryRepository):
-    await memory_repository.upsert_judgment(_entry(source_id=1, category_l1_id=1, area="X", factory="A"))
-    await memory_repository.upsert_judgment(_entry(source_id=2, category_l1_id=2, area="Y", factory="B"))
+    await memory_repository.upsert_judgment(
+        _entry(source_id=1, category_l1_id=1, area="X", factory="A")
+    )
+    await memory_repository.upsert_judgment(
+        _entry(source_id=2, category_l1_id=2, area="Y", factory="B")
+    )
     await memory_repository.cluster_pending(limit=10)
     patterns = await memory_repository.list_patterns(top_k=10)
     assert len(patterns) >= 2

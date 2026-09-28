@@ -16,7 +16,17 @@ app = FastAPI(title="CPS Vector Service")
 @contextmanager
 def db():
     connection = sqlite3.connect(DB_PATH)
-    connection.execute("CREATE TABLE IF NOT EXISTS vectors (collection TEXT NOT NULL, image_id INTEGER NOT NULL, case_id INTEGER NOT NULL, category_l1_id INTEGER, category_l2_id INTEGER, enabled INTEGER NOT NULL, vector TEXT NOT NULL, PRIMARY KEY (collection, image_id))")
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS vectors ("
+        "collection TEXT NOT NULL, "
+        "image_id INTEGER NOT NULL, "
+        "case_id INTEGER NOT NULL, "
+        "category_l1_id INTEGER, "
+        "category_l2_id INTEGER, "
+        "enabled INTEGER NOT NULL, "
+        "vector TEXT NOT NULL, "
+        "PRIMARY KEY (collection, image_id))"
+    )
     try:
         yield connection
         connection.commit()
@@ -60,7 +70,24 @@ def load(request: VectorRequest):
 def upsert(request: VectorRequest):
     image_id = request.id if request.id is not None else request.imageId
     with db() as connection:
-        connection.execute("INSERT INTO vectors VALUES(?,?,?,?,?,?,?) ON CONFLICT(collection,image_id) DO UPDATE SET case_id=excluded.case_id, category_l1_id=excluded.category_l1_id, category_l2_id=excluded.category_l2_id, enabled=excluded.enabled, vector=excluded.vector", (request.collection, image_id, request.caseId, request.categoryL1Id, request.categoryL2Id, int(request.enabled is not False), json.dumps(request.vector)))
+        connection.execute(
+            "INSERT INTO vectors VALUES(?,?,?,?,?,?,?) "
+            "ON CONFLICT(collection,image_id) DO UPDATE SET "
+            "case_id=excluded.case_id, "
+            "category_l1_id=excluded.category_l1_id, "
+            "category_l2_id=excluded.category_l2_id, "
+            "enabled=excluded.enabled, "
+            "vector=excluded.vector",
+            (
+                request.collection,
+                image_id,
+                request.caseId,
+                request.categoryL1Id,
+                request.categoryL2Id,
+                int(request.enabled is not False),
+                json.dumps(request.vector),
+            ),
+        )
     return {"status": "upserted", "imageId": image_id}
 
 
@@ -69,7 +96,11 @@ def search(request: VectorRequest):
     query = np.asarray(request.vector, dtype=np.float32)
     results = []
     with db() as connection:
-        rows = connection.execute("SELECT image_id,case_id,category_l1_id,category_l2_id,enabled,vector FROM vectors WHERE collection=?", (request.collection,)).fetchall()
+        rows = connection.execute(
+            "SELECT image_id,case_id,category_l1_id,category_l2_id,enabled,vector "
+            "FROM vectors WHERE collection=?",
+            (request.collection,),
+        ).fetchall()
     for image_id, case_id, l1, l2, enabled, raw in rows:
         if not enabled:
             continue
@@ -77,6 +108,14 @@ def search(request: VectorRequest):
         if vector.shape != query.shape or not np.any(vector):
             continue
         score = float(np.dot(query, vector) / (np.linalg.norm(query) * np.linalg.norm(vector)))
-        results.append({"imageId": image_id, "caseId": case_id, "categoryL1Id": l1, "categoryL2Id": l2, "score": score})
+        results.append(
+            {
+                "imageId": image_id,
+                "caseId": case_id,
+                "categoryL1Id": l1,
+                "categoryL2Id": l2,
+                "score": score,
+            }
+        )
     results.sort(key=lambda item: item["score"], reverse=True)
     return {"hits": results[: max(1, min(request.topK, 100))]}

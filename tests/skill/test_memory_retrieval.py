@@ -11,7 +11,6 @@ from app.skill.memory.application.retrieval_service import (
 )
 from app.skill.memory.domain.enums import SourceTable
 from app.skill.memory.domain.models import EMBEDDING_DIM, MemoryEntry
-from app.skill.memory.infrastructure.embedding_client import HashPlaceholderEmbedding
 from app.skill.memory.infrastructure.repository import MemoryRepository
 
 

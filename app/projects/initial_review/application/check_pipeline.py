@@ -133,7 +133,9 @@ class CheckPipeline:
             issue_snapshot=issue_snapshot,
         )
         text_validity = await self._text_validity(texts, issue_context, historical_hints_json)
-        image_compare = await self._image_compare(snapshot, request, issue_context, historical_hints_json)
+        image_compare = await self._image_compare(
+            snapshot, request, issue_context, historical_hints_json
+        )
         return {
             "measure_similarity": similarity,
             "text_validity": text_validity,

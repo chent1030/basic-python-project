@@ -1,16 +1,12 @@
 """MemoryIngestionService 单元测试：单条 / 幂等 / backfill / supersede / 失败兜底。"""
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from app.skill.memory.application.ingestion_service import (
     IngestionSummary,
     MemoryIngestionService,
 )
-from app.skill.memory.infrastructure.embedding_client import HashPlaceholderEmbedding
-from app.skill.memory.infrastructure.repository import MemoryRepository
 
 
 @pytest.fixture
@@ -66,7 +62,9 @@ async def test_ingest_adjudication_idempotent(ingestion_service: MemoryIngestion
 @pytest.mark.asyncio
 async def test_ingest_event_and_issue(ingestion_service: MemoryIngestionService):
     e = await ingestion_service.ingest_event({"id": 1, "issue_id": 100, "payload": {"kind": "x"}})
-    i = await ingestion_service.ingest_issue({"id": 1, "issue_id": 100, "payload": {"summary": "s"}})
+    i = await ingestion_service.ingest_issue(
+        {"id": 1, "issue_id": 100, "payload": {"summary": "s"}}
+    )
     assert e.source_table == "EVENT"
     assert i.source_table == "ISSUE"
 
@@ -75,11 +73,27 @@ async def test_ingest_event_and_issue(ingestion_service: MemoryIngestionService)
 async def test_backfill_routes_to_ingestor(ingestion_service_with_java):
     svc, java = ingestion_service_with_java
     java._kinds["adjudications"] = [
-        {"id": 1, "issue_id": 100, "decision": "APPROVE", "category_l1_id": 1, "factory": "A", "area": "B"},
-        {"id": 2, "issue_id": 101, "decision": "REJECT", "category_l1_id": 1, "factory": "A", "area": "B"},
+        {
+            "id": 1,
+            "issue_id": 100,
+            "decision": "APPROVE",
+            "category_l1_id": 1,
+            "factory": "A",
+            "area": "B",
+        },
+        {
+            "id": 2,
+            "issue_id": 101,
+            "decision": "REJECT",
+            "category_l1_id": 1,
+            "factory": "A",
+            "area": "B",
+        },
     ]
     java._kinds["events"] = [{"id": 1, "issue_id": 100, "payload": {"k": "v"}}]
-    summary: IngestionSummary = await svc.backfill_since("2024-01-01T00:00:00Z", "2024-12-31T00:00:00Z")
+    summary: IngestionSummary = await svc.backfill_since(
+        "2024-01-01T00:00:00Z", "2024-12-31T00:00:00Z"
+    )
     assert summary.adjudications == 2
     assert summary.events == 1
     assert summary.issues == 0
@@ -93,7 +107,9 @@ async def test_backfill_routes_to_ingestor(ingestion_service_with_java):
 async def test_backfill_handles_java_failure_gracefully(ingestion_service_with_java):
     svc, java = ingestion_service_with_java
     java.should_fail = True
-    summary: IngestionSummary = await svc.backfill_since("2024-01-01T00:00:00Z", "2024-12-31T00:00:00Z")
+    summary: IngestionSummary = await svc.backfill_since(
+        "2024-01-01T00:00:00Z", "2024-12-31T00:00:00Z"
+    )
     # kinds 全部失败 → 计数 0，但 errors 列表非空
     assert summary.adjudications == 0
     assert summary.errors

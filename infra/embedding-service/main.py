@@ -54,6 +54,9 @@ def embed(request: EmbeddingRequest):
             vector = model.get_image_features(**inputs)
         else:
             output = model.vision_model(**inputs).pooler_output
-            vector = model.visual_projection(output) if hasattr(model, "visual_projection") else output
+            if hasattr(model, "visual_projection"):
+                vector = model.visual_projection(output)
+            else:
+                vector = output
         vector = torch.nn.functional.normalize(vector, p=2, dim=-1)[0].float().cpu().tolist()
     return {"model": request.model, "dimension": len(vector), "embedding": vector}
