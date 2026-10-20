@@ -33,6 +33,9 @@ class EmbeddingsConfig(Contract):
 class CPSConfig(Contract):
     enabled: bool = True
     internal_trust: bool = False
+    # 内部共享密钥（跨网络部署）：与 Java 侧 CPS_AGENT_FRAMEWORK_API_TOKEN 配对，
+    # 请求方以 Authorization: Bearer <key> 直连；env CPS_INTERNAL_API_KEY 优先于此处。
+    internal_api_key: str = ""
     trusted_networks: list[str] = Field(default_factory=lambda: ["127.0.0.1/32", "::1/128"])
     max_rounds: int = Field(default=40, ge=1, le=200)
     max_image_bytes: int = Field(default=10_000_000, ge=1024, le=10_000_000)

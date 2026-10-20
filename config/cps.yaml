@@ -1,4 +1,9 @@
 enabled: true
+# 内网直连信任：Java 后端（CpsAgentFrameworkClient）不带 token 调用 /api/v1/agent|cps/*，
+# 凭 trusted_networks 网段放行并授予 legacy-cps 全角色；生产部署应收紧网段。
+internal_trust: true
+# 内部共享密钥：跨网络部署时 Java 以 Authorization: Bearer <key> 直连（生产建议用 env CPS_INTERNAL_API_KEY 注入，勿提交真实值）。
+internal_api_key: ""
 trusted_networks:
   - 127.0.0.1/32
   - ::1/128

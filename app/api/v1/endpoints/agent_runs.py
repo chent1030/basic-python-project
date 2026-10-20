@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import json
+import os
+import secrets
 import time
 from typing import Annotated, Any
 
@@ -52,9 +54,9 @@ def principal(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer),
 ) -> Principal:
+    configuration = CPSConfig.load()
     if credentials is None:
         client = request.client.host if request.client else ""
-        configuration = CPSConfig.load()
         trusted = False
         try:
             address = ipaddress.ip_address(client)
@@ -72,6 +74,16 @@ def principal(
                 expires=time.time() + 3600,
             )
         raise HTTPException(401, "Missing bearer token")
+    # 内部共享密钥：跨网络部署时 Java 后端以 Bearer <key> 直连（免 JWT 体系），
+    # 密钥取 env CPS_INTERNAL_API_KEY 或 cps.yaml internal_api_key，恒定时间比较。
+    internal_key = os.environ.get("CPS_INTERNAL_API_KEY") or configuration.internal_api_key
+    if internal_key and secrets.compare_digest(credentials.credentials, internal_key):
+        return Principal(
+            tenant="local-factory",
+            actor="legacy-cps",
+            roles=["cps_employee", "cps_dispatcher", "cps_supervisor", "cps_admin"],
+            expires=time.time() + 3600,
+        )
     try:
         claims = decode_token(credentials.credentials)
     except Exception as exc:

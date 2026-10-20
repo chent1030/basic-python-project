@@ -200,7 +200,7 @@ cps_agent:
       # 404 model_not_found（j7 冒烟实录），换 OpenAI 兼容且已验证可调的
       # qwen-vl-plus（探测 qwen-vl-max 亦可）。config/agents.yaml 同名模型属
       # agent 框架线，遗留待另一线处理。
-      vision_model: "qwen-vl-plus"
+      vision_model: "qwen3-vl-plus"
       temperature: 0.1
       field_budget_seconds: 90.0   # 单次模型调用(含重试一次)预算;4×90s < 480s
       max_images_per_side: 4       # 送视觉模型每侧照片上限

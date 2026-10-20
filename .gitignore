@@ -29,3 +29,6 @@ build/
 .env
 image-tag.txt
 scripts/j7_smoke_result.json
+
+# 本地运行日志
+*.log

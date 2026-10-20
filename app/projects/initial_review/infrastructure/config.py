@@ -15,6 +15,9 @@ from app.core.config import settings
 
 #: env 覆盖名（待联调项：与 Java 侧部署清单同步登记）。
 ENV_JAVA_CALLBACK_BASE_URL = "CPS_JAVA_CALLBACK_BASE_URL"
+#: Python → Java 回调共享密钥（与 Java 侧 cps.callback.shared-token / CPS_CALLBACK_SHARED_TOKEN 配对，
+#: 跨网络部署时以 Authorization: Bearer <key> 替代 IP 白名单；env-only，不落 yaml）。
+ENV_CALLBACK_SHARED_TOKEN = "CPS_CALLBACK_SHARED_TOKEN"
 ENV_STORAGE_ENDPOINT = "CPS_STORAGE_ENDPOINT"
 ENV_STORAGE_ACCESS_KEY = "CPS_STORAGE_ACCESS_KEY"
 ENV_STORAGE_SECRET_KEY = "CPS_STORAGE_SECRET_KEY"
@@ -86,6 +89,8 @@ class InitialReviewSettings:
     #: 波次 8（J 线转交 #4）：手动回调重推的累计尝试次数上限（防滥用配额）。
     #: callback_attempts 为累计口径（正常投递+手动重推都计数），达到上限 → 429。
     callback_manual_push_max_total_attempts: int = 20
+    #: Python → Java 回调共享密钥（env CPS_CALLBACK_SHARED_TOKEN；空 = 不带认证头，走 IP 白名单）。
+    callback_shared_token: str = ""
     similarity: SimilaritySettings = field(
         default_factory=lambda: SimilaritySettings(0.90, 0.75, 0.85, 0.70)
     )
@@ -122,6 +127,7 @@ def load_initial_review_settings(env: dict[str, str] | None = None) -> InitialRe
         callback_timeout_seconds=cfg.java_callback.timeout_seconds,
         callback_max_retries=cfg.java_callback.max_retries,
         callback_backoff_seconds=backoff,
+        callback_shared_token=env.get(ENV_CALLBACK_SHARED_TOKEN) or "",
         similarity=SimilaritySettings(
             same_fail=ir.similarity.same_fail,
             same_warn=ir.similarity.same_warn,
