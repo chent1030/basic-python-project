@@ -5,8 +5,9 @@
   历史比对无历史 → SKIPPED+原因，不伪造）；
 - A8 三字段循环：逐字段调用文本模型，单次预算 ``field_budget_seconds``
   （``asyncio.timeout``，可配，默认 90s）；空字段（规则层已 FAIL）不浪费调用；
-- A7 附件双模式：object_key → RustFS（S3 GET）；content_base64 → 内存原文
-  （仅首次执行可得；重放执行拿不到原文 → 如实 SKIPPED，不伪造）；
+- A7 附件三形态：url → HTTP(S) GET（Java 直接传 URL）；object_key → MinIO
+  （S3 GET）；content_base64 → 内存原文（仅首次执行可得；重放执行拿不到原文
+  → 如实 SKIPPED，不伪造）；三者取一，统一转 data URL 送视觉模型；
   读数核对并入同一次视觉调用；
 - 模型不可用（ModelUnavailableError：未配置/禁用/客户端未装配）→ SKIPPED+原因；
   技术失败（ModelCallError/超时/输出两次无效）→ DEGRADED（不冒充内容结论）。
@@ -18,9 +19,12 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
+
+import httpx
 
 from app.projects.cps.initial_review.domain.image_compare import ImageCompareResult
 from app.projects.cps.initial_review.domain.measure_similarity import check_measure_similarity
@@ -101,13 +105,16 @@ class CheckPipeline:
         settings: InitialReviewSettings,
         *,
         model_client: Any | None = None,
-        rustfs: Any | None = None,
+        minio: Any | None = None,
         history_loader: HistoryLoader | None = None,
+        url_transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._settings = settings
         self._model = model_client
-        self._rustfs = rustfs
+        self._minio = minio
         self._history_loader = history_loader
+        #: 测试注入 httpx.MockTransport（url 形态附件拉取）
+        self._url_transport = url_transport
 
     # ------------------------------------------------------------------ 入口
 
@@ -337,22 +344,63 @@ class CheckPipeline:
             "readings": reading_section,
         }
 
+    async def _fetch_url_data_url(self, url: str) -> str:
+        """HTTP(S) GET 附件 URL → data URL（送视觉模型的统一形态）。
+
+        技术失败（连接/超时/非 200/空响应/超体积）一律 ``ModelCallError``
+        → 管线记 DEGRADED 且不伪造图片内容（与 object_key 路径同一语义）。
+        """
+        model_check = self._settings.model_check
+        budget = model_check.attachment_timeout_seconds
+        cap = model_check.attachment_max_bytes
+        try:
+            async with httpx.AsyncClient(
+                transport=self._url_transport, follow_redirects=True, timeout=budget
+            ) as client:
+                resp = await client.get(url)
+        except httpx.TransportError as exc:
+            raise ModelCallError(
+                f"附件 URL 拉取失败 {url}: {type(exc).__name__}: {exc}"
+            ) from exc
+        if resp.status_code != 200:
+            raise ModelCallError(f"附件 URL {url} → HTTP {resp.status_code}")
+        if not resp.content:
+            raise ModelCallError(f"附件 URL {url} 返回空响应")
+        if len(resp.content) > cap:
+            raise ModelCallError(
+                f"附件 URL {url} 体积 {len(resp.content)} 字节超过上限 {cap}"
+            )
+        mime = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+        if not mime.startswith("image/"):
+            # 服务端未给 image/*（或未给 Content-Type）时按 URL 后缀兜底
+            path = url.split("?", 1)[0].rsplit("/", 1)[-1]
+            suffix = "." + path.rsplit(".", 1)[-1].lower() if "." in path else ""
+            mime = MIME_BY_SUFFIX.get(suffix, "application/octet-stream")
+        return "data:" + mime + ";base64," + base64.b64encode(resp.content).decode("ascii")
+
     async def _resolve_side(
         self, metas: list[dict[str, Any]], request_attachments: Any | None
     ) -> tuple[list[str], list[str]]:
         """一侧附件元数据 → (data_urls, evidence_refs)。
 
-        - object_key → RustFS 拉取（配置缺失 → ModelUnavailableError → SKIPPED）；
+        - url → HTTP(S) GET（失败/超时/非 200 → ModelCallError → DEGRADED）；
+        - object_key → MinIO 拉取（配置缺失 → ModelUnavailableError → SKIPPED）；
         - content_base64 → 仅内存原文可得（首次执行）；重放执行拿不到 → 技术失败 DEGRADED。
         """
         originals = list(request_attachments) if request_attachments is not None else []
         urls: list[str] = []
         refs: list[str] = []
         for idx, meta in enumerate(metas):
+            if meta.get("url"):
+                # Java 可直接传 URL：每次执行按 URL 重新拉取（重放语义天然成立）。
+                link = meta["url"]
+                urls.append(await self._fetch_url_data_url(link))
+                refs.append(link)
+                continue
             if meta.get("object_key"):
                 key = meta["object_key"]
-                assert self._rustfs is not None  # object_key 模式必配 fetcher（装配层契约）
-                urls.append(await self._rustfs.fetch_data_url(key))
+                assert self._minio is not None  # object_key 模式必配 fetcher（装配层契约）
+                urls.append(await self._minio.fetch_data_url(key))
                 refs.append(key)
                 continue
             digest = meta.get("content_base64_sha256")

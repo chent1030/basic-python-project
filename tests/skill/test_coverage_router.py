@@ -195,14 +195,19 @@ def test_get_analyze_forbidden_when_wrong_role():
     assert resp.status_code == 403
 
 
-def test_get_analyze_unauthenticated_returns_401():
-    """不走 dependency_overrides → 走真实 principal → 401。"""
+def test_get_analyze_invalid_token_returns_401():
+    """不走 dependency_overrides → 走真实 principal：坏 token 401。
+
+    注：无 token 已是内网直连（legacy-cps 含 cps_admin），不再 401；
+    401 只保留给无法解析的 Bearer。
+    """
     raw_app = FastAPI()
     raw_app.include_router(coverage_router)
     raw_client = TestClient(raw_app)
     resp = raw_client.get(
         "/coverage/analyze",
         params={"periodStart": PS, "periodEnd": PE},
+        headers={"Authorization": "Bearer not-a-jwt"},
     )
     assert resp.status_code == 401
 

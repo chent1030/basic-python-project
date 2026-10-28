@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import ipaddress
 import json
-import os
-import secrets
 import time
 from typing import Annotated, Any
 
@@ -17,7 +14,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.core.security import decode_token
 from app.harness.kernel import Artifacts, Mailbox, Memory, Runtime, Scope
 from app.harness.kernel.domain.models import Forbidden, FrameworkError, segment
-from app.projects.cps.infrastructure.config import CPSConfig
 
 
 class FrameworkRoute(APIRoute):
@@ -36,11 +32,23 @@ class FrameworkRoute(APIRoute):
 router = APIRouter(prefix="/agent-runs", tags=["agent-framework"], route_class=FrameworkRoute)
 
 
+#: 内网直连身份（Java → Python）的角色集：沿用既有 CPS 业务角色，
+#: 不含 run_operator/run_reader 等框架角色（框架接口仍需 JWT）。
+INTERNAL_DIRECT_ROLES = (
+    "cps_employee",
+    "cps_dispatcher",
+    "cps_supervisor",
+    "cps_admin",
+)
+
+
 class Principal(BaseModel):
     tenant: str
     actor: str
     roles: list[str]
     expires: float
+    #: 身份来源（审计字段）：``internal-direct``=内网直连（无 token）；``jwt``=框架 JWT。
+    source: str = "jwt"
 
     def require(self, *roles: str) -> None:
         if not set(roles) & set(self.roles):
@@ -54,35 +62,24 @@ def principal(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer),
 ) -> Principal:
-    configuration = CPSConfig.load()
+    """解析调用方身份（内网直连免鉴权 + 框架 JWT 双通道）。
+
+    内网直连（用户要求）：Java 后端只需填 Python 地址，**不再**有共享密钥
+    （``CPS_INTERNAL_API_KEY``/``internal_api_key``）、IP 白名单
+    （``trusted_networks``）或 ``internal_trust`` 开关；无 Authorization 头即
+    签发内网直连 Principal（来源标记 ``internal-direct``）。
+
+    携带 Bearer 时仍走 JWT 校验（框架/前台调用方）：解析失败一律 401，
+    **不**回退成内网直连——否则一张坏 token 会被静默降级成有效身份。
+    ``request`` 参数保留以维持既有 ``Depends(principal)`` 签名不变。
+    """
     if credentials is None:
-        client = request.client.host if request.client else ""
-        trusted = False
-        try:
-            address = ipaddress.ip_address(client)
-            trusted = any(
-                address in ipaddress.ip_network(network)
-                for network in configuration.trusted_networks
-            )
-        except ValueError:
-            trusted = client == "localhost"
-        if trusted and configuration.internal_trust:
-            return Principal(
-                tenant="local-factory",
-                actor="legacy-cps",
-                roles=["cps_employee", "cps_dispatcher", "cps_supervisor", "cps_admin"],
-                expires=time.time() + 3600,
-            )
-        raise HTTPException(401, "Missing bearer token")
-    # 内部共享密钥：跨网络部署时 Java 后端以 Bearer <key> 直连（免 JWT 体系），
-    # 密钥取 env CPS_INTERNAL_API_KEY 或 cps.yaml internal_api_key，恒定时间比较。
-    internal_key = os.environ.get("CPS_INTERNAL_API_KEY") or configuration.internal_api_key
-    if internal_key and secrets.compare_digest(credentials.credentials, internal_key):
         return Principal(
             tenant="local-factory",
             actor="legacy-cps",
-            roles=["cps_employee", "cps_dispatcher", "cps_supervisor", "cps_admin"],
+            roles=list(INTERNAL_DIRECT_ROLES),
             expires=time.time() + 3600,
+            source="internal-direct",
         )
     try:
         claims = decode_token(credentials.credentials)

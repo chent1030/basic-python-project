@@ -2,11 +2,11 @@
 
 职责与口径：
 - 三字段白名单（D-03）：``reason / short_term / long_term``，非白名单 422；
-- 音频来源二选一（互斥）：``audio_object_key``（RustFS 取流）或
+- 音频来源二选一（互斥）：``audio_object_key``（MinIO 取流）或
   ``audio_base64``（内嵌），两者都给/都不给 → 422；
 - 幂等：键惯例 ``speech-{submissionId}-{field}-{attempt}``（服务端可派生）；
   进程内 LRU+TTL 缓存，命中 → 同结果 + ``replayed=true``（SKIPPED 可重放）；
-- 不伪造：ASR 未配置/禁用/鉴权拒绝/RustFS 配置缺失 → ``SKIPPED``（缓存可重放）；
+- 不伪造：ASR 未配置/禁用/鉴权拒绝/MinIO 配置缺失 → ``SKIPPED``（缓存可重放）；
 - 技术失败：ASR 网络/网关/超时/响应无效 → ``SpeechTechnicalError``（端点 502，
   不缓存，Java 同幂等键可重试）；
 - 转写结果**仅回填表单**（PRD §20.2 / AC-03），敏感词与长度校验属 A5 初审
@@ -57,12 +57,12 @@ class SpeechRequestError(Exception):
 
 
 class SpeechTechnicalError(Exception):
-    """技术失败（ASR 网络/网关/超时/RustFS 取流失败）→ 502，不缓存可重试。"""
+    """技术失败（ASR 网络/网关/超时/MinIO 取流失败）→ 502，不缓存可重试。"""
 
 
 @runtime_checkable
 class AudioFetcher(Protocol):
-    """音频取流最小接口（initial_review 的 RustFSObjectFetcher 满足）。"""
+    """音频取流最小接口（initial_review 的 MinIOObjectFetcher 满足）。"""
 
     async def fetch_bytes(self, object_key: str) -> bytes: ...
 
@@ -146,7 +146,7 @@ class SpeechToTextService:
         try:
             audio = await self._load_audio(req)
         except _SkipNow as exc:
-            # RustFS 前置缺失：SKIPPED 结果已入缓存，此处返回
+            # MinIO 前置缺失：SKIPPED 结果已入缓存，此处返回
             return self._skipped(req, str(exc))
 
         try:
@@ -200,13 +200,13 @@ class SpeechToTextService:
             raise SpeechRequestError(f"attempt 必须 ≥1，收到 {req.attempt}")
 
     async def _load_audio(self, req: SpeechTranscribeRequest) -> bytes:
-        """取音频字节：object_key → RustFS 内网取流；base64 → 解码校验。"""
+        """取音频字节：object_key → MinIO 内网取流；base64 → 解码校验。"""
         limit = self._cfg.max_audio_bytes
         if req.audio_object_key:
             try:
                 audio = await self._fetcher.fetch_bytes(req.audio_object_key)
             except ModelUnavailableError as exc:
-                # RustFS 配置缺失等前置不具备 → SKIPPED（不伪造，可重放）
+                # MinIO 配置缺失等前置不具备 → SKIPPED（不伪造，可重放）
                 self._cache.put(req.idempotency_key, self._skipped(req, str(exc)))
                 raise _SkipNow(str(exc)) from exc
             except ModelCallError as exc:

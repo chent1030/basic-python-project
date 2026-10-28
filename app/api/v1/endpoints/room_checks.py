@@ -76,22 +76,52 @@ def _coerce_str(
     return v
 
 
-def _coerce_photos(value: Any) -> list[str]:
+def _coerce_photo_list(value: Any, field_name: str, *, max_len: int) -> list[str]:
     if not isinstance(value, list) or not value:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="photo_object_keys must be a non-empty list",
+            detail=f"{field_name} must be a non-empty list",
         )
-    if len(value) > ENDPOINT_MAX_PHOTOS:
+    out: list[str] = []
+    for i, item in enumerate(value):
+        coerced = _coerce_str(item, f"{field_name}[{i}]", max_len=max_len)
+        out.append(coerced)  # type: ignore[arg-type]  # _coerce_str 必返 str（required）
+    return out
+
+
+def _coerce_photos(payload: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """C-04 照片引用：photo_object_keys 或 photo_urls 恰有一个非空，总数 1..上限。
+
+    允许 Java 直接传 URL（Python 侧 GET 拉取），也保留 object_key 形态；
+    同时给两种或都不给 → 422。
+    """
+    raw_keys = payload.get("photo_object_keys")
+    raw_urls = payload.get("photo_urls")
+    keys = (
+        _coerce_photo_list(raw_keys, "photo_object_keys", max_len=512)
+        if raw_keys
+        else []
+    )
+    urls = (
+        _coerce_photo_list(raw_urls, "photo_urls", max_len=2048) if raw_urls else []
+    )
+    if bool(keys) == bool(urls):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"photo_object_keys exceeds {ENDPOINT_MAX_PHOTOS} items",
+            detail="photo_object_keys 与 photo_urls 必须且只能提供一个",
         )
-    keys: list[str] = []
-    for i, item in enumerate(value):
-        key = _coerce_str(item, f"photo_object_keys[{i}]", max_len=512)
-        keys.append(key)  # type: ignore[arg-type]  # _coerce_str 必返 str（required）
-    return keys
+    if len(keys) + len(urls) > ENDPOINT_MAX_PHOTOS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"照片数量 exceeds {ENDPOINT_MAX_PHOTOS} items",
+        )
+    for i, url in enumerate(urls):
+        if not url.lower().startswith(("http://", "https://")):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"photo_urls[{i}] must be http(s) URL",
+            )
+    return keys, urls
 
 
 def _coerce_attempt(value: Any) -> int:
@@ -126,7 +156,7 @@ async def judge_room_check(
     attempt = _coerce_attempt(payload.get("attempt"))
     item_content = _coerce_str(payload.get("item_content"), "item_content", max_len=512)
     item_type = _coerce_str(payload.get("item_type"), "item_type", max_len=64)
-    photos = _coerce_photos(payload.get("photo_object_keys"))
+    photo_object_keys, photo_urls = _coerce_photos(payload)
     deduction = _coerce_deduction(payload.get("deduction"))
     config_version = _coerce_str(
         payload.get("config_version"), "config_version", max_len=64, required=False
@@ -144,7 +174,8 @@ async def judge_room_check(
         attempt=attempt,
         item_content=item_content,
         item_type=item_type,
-        photo_object_keys=tuple(photos),
+        photo_object_keys=tuple(photo_object_keys),
+        photo_urls=tuple(photo_urls),
         deduction=deduction,
         config_version=config_version,
         room_name=room_name,
@@ -175,6 +206,7 @@ async def judge_room_check(
         "reason": result.reason,
         "evidence": result.evidence,
         "photo_object_keys": list(result.photo_object_keys),
+        "photo_urls": list(result.photo_urls),
         "item_snapshot": result.item_snapshot,
         "stage_trace": result.stage_trace,
         "model_version": result.model_version,

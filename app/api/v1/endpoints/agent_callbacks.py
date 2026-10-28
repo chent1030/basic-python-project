@@ -32,7 +32,7 @@ from app.projects.cps.initial_review.infrastructure.callback import JavaCallback
 from app.projects.cps.initial_review.infrastructure.config import load_initial_review_settings
 from app.projects.cps.initial_review.infrastructure.model_client import (
     DashScopeModelClient,
-    RustFSObjectFetcher,
+    MinIOObjectFetcher,
 )
 from app.projects.cps.initial_review.infrastructure.repository import InitialReviewRepository
 
@@ -66,7 +66,7 @@ def initial_review_service(request: Request) -> InitialReviewService:
             callback_client=JavaCallbackClient(settings),
             settings=settings,
             model_client=DashScopeModelClient(settings.model_check),
-            rustfs_fetcher=RustFSObjectFetcher(settings.rustfs),
+            minio_fetcher=MinIOObjectFetcher(settings.minio),
             history_loader=load_history,
         )
         request.app.state.initial_review_service = service

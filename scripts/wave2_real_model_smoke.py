@@ -3,7 +3,7 @@
 前置：
 - export DASHSCOPE_API_KEY=...（config/agents.yaml qwen provider）
 - 本地 PG 无需（本脚本不落数据库）
-- 可选：RustFS 已配置（CPS_STORAGE_* env）时补 --object-key 前后照片键做 object_key 模式；
+- 可选：MinIO 已配置（CPS_STORAGE_* env）时补 --object-key 前后照片键做 object_key 模式；
   未给键则退 base64 模式（脚本内自造两张纯色 PNG）。
 
 用法：
@@ -31,7 +31,7 @@ from app.projects.cps.initial_review.infrastructure.config import load_initial_r
 from app.projects.cps.initial_review.infrastructure.model_client import (
     DashScopeModelClient,
     ModelUnavailableError,
-    RustFSObjectFetcher,
+    MinIOObjectFetcher,
 )
 from app.projects.cps.initial_review.infrastructure.prompts import (
     build_image_compare_prompt,
@@ -103,17 +103,17 @@ async def main() -> int:
 
     images: list[str] | None = None
     mode = "base64（脚本自造纯色 PNG）"
-    if settings.rustfs.unavailable_reason is None and before_args and after_args:
-        fetcher = RustFSObjectFetcher(settings.rustfs)
+    if settings.minio.unavailable_reason is None and before_args and after_args:
+        fetcher = MinIOObjectFetcher(settings.minio)
         before_key = before_args[0].split("=", 1)[1]
         after_key = after_args[0].split("=", 1)[1]
-        mode = f"object_key（RustFS {settings.rustfs.endpoint}）"
+        mode = f"object_key（MinIO {settings.minio.endpoint}）"
         images = [
             await fetcher.fetch_data_url(before_key),
             await fetcher.fetch_data_url(after_key),
         ]
     elif before_args or after_args:
-        print("提示：RustFS 未配置或仅给了一侧 object_key，退 base64 模式")
+        print("提示：MinIO 未配置或仅给了一侧 object_key，退 base64 模式")
 
     if images is None:
         from app.projects.cps.initial_review.infrastructure.model_client import data_url

@@ -4,7 +4,7 @@
 - 正常编排：PENDING → RUNNING → ARCHIVING → COMPLETED；
 - push_status = UNCONFIGURED 落库（AC-29）；
 - 同窗口二次调用 → 跳过（幂等）；
-- 归档 FAILED 路径（RustFS 不可达 → FAILED + error_code）；
+- 归档 FAILED 路径（MinIO 不可达 → FAILED + error_code）；
 """
 from __future__ import annotations
 
@@ -28,12 +28,12 @@ from app.projects.cps.weekly_report.domain.models import (
 async def test_run_once_full_path_completes_and_marks_push_unconfigured(
     make_session_factory, make_service, fixed_now
 ):
-    # 注入 fake uploader（直接 mock 成功 PUT，跳过真实 RustFS）
-    from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
-        RustFSWeeklyReportUploader,
+    # 注入 fake uploader（直接 mock 成功 PUT，跳过真实 MinIO）
+    from app.projects.cps.weekly_report.infrastructure.minio_uploader import (
+        MinIOWeeklyReportUploader,
     )
 
-    fake_uploader = AsyncMock(spec=RustFSWeeklyReportUploader)
+    fake_uploader = AsyncMock(spec=MinIOWeeklyReportUploader)
     fake_uploader.available = True
     fake_uploader.unavailable_reason = None
     fake_uploader.put_bytes = AsyncMock(return_value=("etag-abc", 4096))
@@ -79,11 +79,11 @@ async def test_run_once_full_path_completes_and_marks_push_unconfigured(
 async def test_run_once_idempotent_skips_when_already_completed(
     make_session_factory, make_service, fixed_now
 ):
-    from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
-        RustFSWeeklyReportUploader,
+    from app.projects.cps.weekly_report.infrastructure.minio_uploader import (
+        MinIOWeeklyReportUploader,
     )
 
-    fake_uploader = AsyncMock(spec=RustFSWeeklyReportUploader)
+    fake_uploader = AsyncMock(spec=MinIOWeeklyReportUploader)
     fake_uploader.available = True
     fake_uploader.unavailable_reason = None
     fake_uploader.put_bytes = AsyncMock(return_value=("etag-1", 4096))
@@ -108,13 +108,13 @@ async def test_run_once_marks_failed_when_uploader_unavailable(
     make_session_factory, make_service, fixed_now
 ):
     """归档不可用 → FAILED，不伪造「已归档」语义。"""
-    from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
-        RustFSWeeklyReportUploader,
+    from app.projects.cps.weekly_report.infrastructure.minio_uploader import (
+        MinIOWeeklyReportUploader,
     )
 
-    fake_uploader = AsyncMock(spec=RustFSWeeklyReportUploader)
+    fake_uploader = AsyncMock(spec=MinIOWeeklyReportUploader)
     fake_uploader.available = False
-    fake_uploader.unavailable_reason = "RustFS 周报配置不完整"
+    fake_uploader.unavailable_reason = "MinIO 周报配置不完整"
 
     svc = make_service(uploader=fake_uploader)
     win = compute_window(now=fixed_now)
@@ -122,7 +122,7 @@ async def test_run_once_marks_failed_when_uploader_unavailable(
         report_type="room-check", window=win
     )
     assert result["status"] == STATUS_FAILED
-    assert "RustFS" in result["error"]
+    assert "MinIO" in result["error"]
     assert result["run_no"] == 1  # 波次 7:FAILED 行已落库,返回带 run_no
 
     # 行落库为 FAILED + error_code = ARCHIVE_UNAVAILABLE
@@ -149,11 +149,11 @@ async def test_run_once_marks_failed_when_uploader_unavailable(
 async def test_run_once_records_push_with_attempted_at(
     make_session_factory, make_service, fixed_now
 ):
-    from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
-        RustFSWeeklyReportUploader,
+    from app.projects.cps.weekly_report.infrastructure.minio_uploader import (
+        MinIOWeeklyReportUploader,
     )
 
-    fake_uploader = AsyncMock(spec=RustFSWeeklyReportUploader)
+    fake_uploader = AsyncMock(spec=MinIOWeeklyReportUploader)
     fake_uploader.available = True
     fake_uploader.unavailable_reason = None
     fake_uploader.put_bytes = AsyncMock(return_value=("e2", 2048))
@@ -199,11 +199,11 @@ def test_compute_window_default_now():
 async def test_list_runs_returns_serialized_items(
     make_service, make_session_factory, fixed_now
 ):
-    from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
-        RustFSWeeklyReportUploader,
+    from app.projects.cps.weekly_report.infrastructure.minio_uploader import (
+        MinIOWeeklyReportUploader,
     )
 
-    fake_uploader = AsyncMock(spec=RustFSWeeklyReportUploader)
+    fake_uploader = AsyncMock(spec=MinIOWeeklyReportUploader)
     fake_uploader.available = True
     fake_uploader.unavailable_reason = None
     fake_uploader.put_bytes = AsyncMock(return_value=("e", 100))

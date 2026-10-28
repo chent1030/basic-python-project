@@ -3,6 +3,7 @@
 > **依据**：2026-09 按 [Harness工程标准.md](./Harness工程标准.md)（复刻自 yeasy《智能体 Harness 工程指南》）对 `basic-project/` 的全量架构审计。
 > **审计结论摘要**：内核 `app/harness/kernel` 在运行时/编排/审批 HITL/故障语义/确定性恢复上高度符合标准（多项超出）；主要缺口集中在 **输出治理、记忆、评测、可观测 trace/指标、安全工程化、降级权限收缩** 六大领域，外加 1 个实锤配置违背（internal_trust）与 1 个架构双轨问题（业务绕过内核）。
 > **条目引用**：本文所有修复项均引用标准文档条目 ID（如 MODEL-04），供追溯。
+> **口径变更（2026-10-28）**：用户要求「内部鉴权一律去掉，Java 侧只填地址」。`internal_trust` / `internal_api_key` / `trusted_networks` / `CPS_INTERNAL_API_KEY` / `CPS_CALLBACK_SHARED_TOKEN` 已从代码与配置中整体删除（`principal()` 对无凭证请求签发 `legacy-cps` 内网直连身份，仅 CPS 业务角色；框架接口仍需 JWT）。下文 P0-1 记录的配置违背因此自动消解，其"最小安全配置"改造项已不适用，保留作历史脉络。
 
 ---
 

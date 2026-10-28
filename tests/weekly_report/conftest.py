@@ -10,21 +10,21 @@ import pytest_asyncio
 
 from app.models.weekly_report import WeeklyReportRun
 from app.projects.cps.initial_review.infrastructure.config import (
-    RustFSSettings,
+    MinIOSettings,
     load_initial_review_settings,
 )
 from app.projects.cps.weekly_report.application.service import WeeklyReportService
 from app.projects.cps.weekly_report.domain.data_fetcher import StubDataFetcher
 from app.projects.cps.weekly_report.infrastructure.config import (
-    WeeklyReportRustFSSettings,
+    WeeklyReportMinIOSettings,
     WeeklyReportSettings,
 )
 from app.projects.cps.weekly_report.infrastructure.pusher import NoOpPusher
 from app.projects.cps.weekly_report.infrastructure.repository import (
     WeeklyReportRepository,
 )
-from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
-    RustFSWeeklyReportUploader,
+from app.projects.cps.weekly_report.infrastructure.minio_uploader import (
+    MinIOWeeklyReportUploader,
 )
 from app.skills.weekly_report.skill import build_default_skill
 
@@ -40,16 +40,16 @@ def fixed_now() -> datetime:
 
 
 def make_weekly_report_settings() -> WeeklyReportSettings:
-    """sqlite-test-friendly 设置：RustFS 标记为 unavailable（archiver 不可达）。"""
+    """sqlite-test-friendly 设置：MinIO 标记为 unavailable（archiver 不可达）。"""
     irs = load_initial_review_settings()
     return WeeklyReportSettings(
         sched_enabled=False,
         report_types=("cps-issue-inspection", "room-check"),
-        rustfs=WeeklyReportRustFSSettings(
-            endpoint=irs.rustfs.endpoint,
-            access_key=irs.rustfs.access_key,
-            secret_key=irs.rustfs.secret_key,
-            bucket=irs.rustfs.bucket,
+        minio=WeeklyReportMinIOSettings(
+            endpoint=irs.minio.endpoint,
+            access_key=irs.minio.access_key,
+            secret_key=irs.minio.secret_key,
+            bucket=irs.minio.bucket,
         ),
     )
 
@@ -81,7 +81,7 @@ def make_service(
             "session_factory": make_session_factory,
             "data_fetcher": StubDataFetcher(now=_naive_utc_now()),
             "skill": build_default_skill(),
-            "uploader": RustFSWeeklyReportUploader(settings.rustfs),
+            "uploader": MinIOWeeklyReportUploader(settings.minio),
             "pusher": NoOpPusher(),
             "settings": settings,
             "repository": WeeklyReportRepository(),
@@ -96,7 +96,7 @@ def make_service(
 
 @pytest.fixture
 def fake_uploader():
-    """占位 uploader；本波次测试不验 RustFS（详见 test_rustfs_signing.py 后续补）。"""
+    """占位 uploader；本波次测试不验 MinIO（详见 test_minio_signing.py 后续补）。"""
     return None
 
 
@@ -109,4 +109,4 @@ __all__ = [
 ]
 
 
-_ = RustFSSettings  # noqa: F841  # 占位防 ruff 静态分析误报
+_ = MinIOSettings  # noqa: F841  # 占位防 ruff 静态分析误报

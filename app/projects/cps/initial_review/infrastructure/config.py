@@ -2,7 +2,7 @@
 
 - yaml 来源：config/config.yaml 的 ``cps_agent`` 节（app/core/config.py Settings）；
 - env 覆盖：``CPS_JAVA_CALLBACK_BASE_URL``（回调地址）、
-  ``CPS_STORAGE_ENDPOINT/ACCESS_KEY/SECRET_KEY/BUCKET``（RustFS，变量名与
+  ``CPS_STORAGE_ENDPOINT/ACCESS_KEY/SECRET_KEY/BUCKET``（MinIO，变量名与
   Java 侧 application.yml 的 cps.storage.* 占位符一致，部署同一套 env 即可）。
 """
 
@@ -15,10 +15,8 @@ from app.core.config import settings
 
 #: env 覆盖名（待联调项：与 Java 侧部署清单同步登记）。
 ENV_JAVA_CALLBACK_BASE_URL = "CPS_JAVA_CALLBACK_BASE_URL"
-#: Python → Java 回调共享密钥（与 Java 侧 cps.callback.shared-token /
-#: CPS_CALLBACK_SHARED_TOKEN 配对，跨网络部署时以 Authorization: Bearer <key>
-#: 替代 IP 白名单；env-only，不落 yaml）。
-ENV_CALLBACK_SHARED_TOKEN = "CPS_CALLBACK_SHARED_TOKEN"
+# 回调鉴权：用户要求「只填地址、不再有 token/白名单」——C-02 回调不带任何
+# 认证头（既无共享密钥，也不依赖来源 IP），因此不再有 ENV_CALLBACK_SHARED_TOKEN。
 ENV_STORAGE_ENDPOINT = "CPS_STORAGE_ENDPOINT"
 ENV_STORAGE_ACCESS_KEY = "CPS_STORAGE_ACCESS_KEY"
 ENV_STORAGE_SECRET_KEY = "CPS_STORAGE_SECRET_KEY"
@@ -28,7 +26,7 @@ ENV_MODEL_CHECK_ENABLED = "CPS_INITIAL_REVIEW_MODEL_CHECK_ENABLED"
 
 
 @dataclass(frozen=True)
-class RustFSSettings:
+class MinIOSettings:
     """object_key 附件读取（S3 SigV4 GET，零新增依赖：httpx + stdlib）。"""
 
     endpoint: str
@@ -50,7 +48,7 @@ class RustFSSettings:
             if not value
         ]
         if missing:
-            return "RustFS 配置不完整（缺少 " + "/".join(missing) + "）"
+            return "MinIO 配置不完整（缺少 " + "/".join(missing) + "）"
         return None
 
 
@@ -65,6 +63,9 @@ class ModelCheckSettings:
     temperature: float
     field_budget_seconds: float
     max_images_per_side: int
+    #: url 形态附件的 HTTP(S) 拉取预算与体积上限（Java 直接传 URL 时生效）
+    attachment_timeout_seconds: float = 15.0
+    attachment_max_bytes: int = 10_000_000
 
 
 @dataclass(frozen=True)
@@ -90,8 +91,6 @@ class InitialReviewSettings:
     #: 波次 8（J 线转交 #4）：手动回调重推的累计尝试次数上限（防滥用配额）。
     #: callback_attempts 为累计口径（正常投递+手动重推都计数），达到上限 → 429。
     callback_manual_push_max_total_attempts: int = 20
-    #: Python → Java 回调共享密钥（env CPS_CALLBACK_SHARED_TOKEN；空 = 不带认证头，走 IP 白名单）。
-    callback_shared_token: str = ""
     similarity: SimilaritySettings = field(
         default_factory=lambda: SimilaritySettings(0.90, 0.75, 0.85, 0.70)
     )
@@ -100,8 +99,8 @@ class InitialReviewSettings:
             True, "qwen", "qwen-plus", "Qwen2.5-VL-7B-Instruct", 0.1, 90.0, 4
         )
     )
-    rustfs: RustFSSettings = field(
-        default_factory=lambda: RustFSSettings("", "", "", "")
+    minio: MinIOSettings = field(
+        default_factory=lambda: MinIOSettings("", "", "", "")
     )
 
 
@@ -112,7 +111,7 @@ def load_initial_review_settings(env: dict[str, str] | None = None) -> InitialRe
     backoff = tuple(cfg.java_callback.retry_backoff_seconds)
     ir = cfg.initial_review
     mc = ir.model_check
-    rs = ir.rustfs
+    rs = ir.minio
     # 波次 7:model_check.enabled 支持 None=未配置;initial_review 自身未配时
     # 维持既有默认 True 契约(C-04 的独立回退链不经过此处,见 room_checks/config.py)。
     yaml_enabled = mc.enabled if mc.enabled is not None else True
@@ -128,7 +127,6 @@ def load_initial_review_settings(env: dict[str, str] | None = None) -> InitialRe
         callback_timeout_seconds=cfg.java_callback.timeout_seconds,
         callback_max_retries=cfg.java_callback.max_retries,
         callback_backoff_seconds=backoff,
-        callback_shared_token=env.get(ENV_CALLBACK_SHARED_TOKEN) or "",
         similarity=SimilaritySettings(
             same_fail=ir.similarity.same_fail,
             same_warn=ir.similarity.same_warn,
@@ -144,7 +142,7 @@ def load_initial_review_settings(env: dict[str, str] | None = None) -> InitialRe
             field_budget_seconds=mc.field_budget_seconds,
             max_images_per_side=mc.max_images_per_side,
         ),
-        rustfs=RustFSSettings(
+        minio=MinIOSettings(
             endpoint=env.get(ENV_STORAGE_ENDPOINT) or rs.endpoint,
             access_key=env.get(ENV_STORAGE_ACCESS_KEY) or rs.access_key,
             secret_key=env.get(ENV_STORAGE_SECRET_KEY) or rs.secret_key,
@@ -162,7 +160,7 @@ __all__ = [
     "ENV_STORAGE_SECRET_KEY",
     "InitialReviewSettings",
     "ModelCheckSettings",
-    "RustFSSettings",
+    "MinIOSettings",
     "SimilaritySettings",
     "load_initial_review_settings",
 ]

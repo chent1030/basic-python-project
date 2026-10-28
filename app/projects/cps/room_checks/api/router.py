@@ -204,7 +204,7 @@ async def judge_room_check_b6(
     - fingerprint（必填，≤256）：幂等键
     - roomType（必填，枚举）：辅房类型
     - checkItemId（必填，≤64）：点检项 ID
-    - photoObjectKey（必填，≤512）：RustFS 对象键
+    - photoObjectKey（必填，≤512）：MinIO 对象键
     - photoUrl（可选，≤2048）：直连 URL（与 object_key 互斥）
     - expectedMatchType（可选）：期望照片主体类型
     - expectedKeywords（可选，list[str] 或逗号分隔）：期望关键物证

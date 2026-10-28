@@ -9,6 +9,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+import httpx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -21,7 +22,11 @@ from app.projects.cps.room_checks.application.service import (
     RoomCheckJudgeService,
 )
 from app.projects.cps.room_checks.domain.models import ContentJudgeSchema, TypeMatchSchema
-from tests.room_checks.test_service import FakeFetcher, make_settings
+from tests.room_checks.test_service import (
+    FakeFetcher,
+    make_settings,
+    make_url_transport,
+)
 
 PASS_RESULTS = [
     TypeMatchSchema(type_match=True, photo_subject="地面", reason="主体为地面"),
@@ -43,11 +48,15 @@ def _build_app(
     return app
 
 
-def _make_service(results: list | None = None) -> RoomCheckJudgeService:
+def _make_service(
+    results: list | None = None,
+    url_transport: httpx.AsyncBaseTransport | None = None,
+) -> RoomCheckJudgeService:
     return RoomCheckJudgeService(
         model_client=FakeModelCheckClient(results=list(results or PASS_RESULTS)),
         fetcher=FakeFetcher(),
         settings=make_settings(),
+        url_transport=url_transport,
     )
 
 
@@ -151,3 +160,57 @@ def test_endpoint_403_without_cps_admin_role() -> None:
     app = _build_app(roles=["cps_employee"], service=_make_service())
     resp = _post(app, _payload())
     assert resp.status_code == 403
+
+
+# --- photo_urls：Java 直传地址（不落对象存储） ----------------------------------
+
+
+def test_endpoint_photo_urls_accepted_without_object_keys() -> None:
+    app = _build_app(service=_make_service(url_transport=make_url_transport()))
+    body = _post(
+        app,
+        _payload(
+            photo_object_keys=None,
+            photo_urls=["http://java.local/files/room-101.jpg"],
+        ),
+    ).json()
+    assert body["status"] == "JUDGED"
+    assert body["photo_object_keys"] == []
+    assert body["photo_urls"] == ["http://java.local/files/room-101.jpg"]
+
+
+def test_endpoint_422_when_both_photo_forms_given() -> None:
+    app = _build_app(service=_make_service())
+    resp = _post(
+        app,
+        _payload(photo_urls=["http://java.local/files/room-101.jpg"]),
+    )
+    assert resp.status_code == 422
+    assert "必须且只能提供一个" in resp.text
+
+
+def test_endpoint_422_when_no_photo_form_given() -> None:
+    app = _build_app(service=_make_service())
+    assert _post(app, _payload(photo_object_keys=None)).status_code == 422
+
+
+def test_endpoint_422_when_photo_url_not_http() -> None:
+    app = _build_app(service=_make_service())
+    resp = _post(
+        app,
+        _payload(photo_object_keys=None, photo_urls=["file:///tmp/a.jpg"]),
+    )
+    assert resp.status_code == 422
+    assert "must be http(s) URL" in resp.text
+
+
+def test_endpoint_422_when_photo_urls_exceed_endpoint_cap() -> None:
+    app = _build_app(service=_make_service())
+    resp = _post(
+        app,
+        _payload(
+            photo_object_keys=None,
+            photo_urls=[f"http://java.local/{i}.jpg" for i in range(9)],
+        ),
+    )
+    assert resp.status_code == 422

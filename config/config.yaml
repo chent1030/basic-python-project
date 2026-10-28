@@ -204,7 +204,7 @@ cps_agent:
       temperature: 0.1
       field_budget_seconds: 90.0   # 单次模型调用(含重试一次)预算;4×90s < 480s
       max_images_per_side: 4       # 送视觉模型每侧照片上限
-    rustfs:                        # object_key 附件读取;env CPS_STORAGE_* 优先(对齐 Java)
+    minio:                        # object_key 附件读取;env CPS_STORAGE_* 优先(对齐 Java)
       endpoint: "http://127.0.0.1:9000"
       access_key: "admin"          # 本地开发默认(与 Java application.yml 一致)
       secret_key: "Ct0520.0402"
@@ -241,14 +241,14 @@ cps_agent:
     timeout_seconds: 60.0          # 单次转写预算
     max_audio_bytes: 10485760      # 解码后音频字节上限（10MB，模型约束）
   # 周报项目（C1-C6 / §21 / 设计 §3.3 + §4）
-  # sched_enabled / report_types / rustfs_bucket 默认由 env 覆盖：
+  # sched_enabled / report_types / minio_bucket 默认由 env 覆盖：
   #   CPS_WEEKLY_REPORT_SCHED_ENABLED  ：false 关闭调度(开发机默认)；true 启动
   #   CPS_WEEKLY_REPORT_TYPES          ：逗号分隔，默认 cps-issue-inspection,room-check
   #   CPS_WEEKLY_REPORT_BUCKET         ：周报归档独立桶；空 → 复用 cps-attachments
   weekly_report:
     sched_enabled: false           # C3 — 默认关闭,生产部署置 true 启用 APScheduler
     report_types: ["cps-issue-inspection", "room-check"]
-    rustfs_bucket: "cps-attachments"
+    minio_bucket: "cps-attachments"
     cron: "0 8 * * MON"            # Asia/Shanghai
     misfire_grace_time_seconds: 7200
     push_unavailable_reason: "推送未配置"

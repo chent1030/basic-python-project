@@ -13,7 +13,7 @@
 - 重试不重置计时（RUNNING 重放沿用原 deadline_at）；
 - 480s Python deadline < 600s Java 接管窗口的配置护栏；
 - 乱序完成（v2 先于 v1 终态）回调各带各的 task_ref 不串单；
-- RustFS HTTP 不可达（5xx）→ 附件获取 DEGRADED 不伪造。
+- MinIO HTTP 不可达（5xx）→ 附件获取 DEGRADED 不伪造。
 """
 
 from __future__ import annotations
@@ -30,12 +30,12 @@ from app.projects.cps.initial_review.domain.text_rules import (
     check_text_rules,
 )
 from app.projects.cps.initial_review.infrastructure.config import (
-    RustFSSettings,
+    MinIOSettings,
     load_initial_review_settings,
 )
 from app.projects.cps.initial_review.infrastructure.model_client import (
     FakeModelCheckClient,
-    RustFSObjectFetcher,
+    MinIOObjectFetcher,
 )
 from tests.initial_review.conftest import (
     VALID_LONG,
@@ -358,23 +358,23 @@ async def test_out_of_order_completion_callbacks_carry_own_refs() -> None:
     assert len(set(refs)) == 2  # 各自独立，无串单
 
 
-async def test_rustfs_http_error_degrades_image_compare_not_fakes() -> None:
-    """RustFS 不可达（HTTP 5xx，非配置缺失）：附件获取失败 → DEGRADED
+async def test_minio_http_error_degrades_image_compare_not_fakes() -> None:
+    """MinIO 不可达（HTTP 5xx，非配置缺失）：附件获取失败 → DEGRADED
     +「附件获取失败」理由，verdict=SKIPPED 不伪造内容结论。"""
-    cfg = RustFSSettings(
-        endpoint="http://rustfs.test",
+    cfg = MinIOSettings(
+        endpoint="http://minio.test",
         access_key="ak",
         secret_key="sk",
         bucket="cps-attachments",
     )
     transport = httpx.MockTransport(lambda request: httpx.Response(503, text="unavailable"))
-    fetcher = RustFSObjectFetcher(cfg, transport=transport)
+    fetcher = MinIOObjectFetcher(cfg, transport=transport)
     pipe = CheckPipeline(
         make_settings(),
         model_client=FakeModelCheckClient(
             results=[valid_field() for _ in range(3)] + [image_result()]
         ),
-        rustfs=fetcher,
+        minio=fetcher,
     )
     snap = snapshot_of(
         before_attachments=[{"object_key": "before/1.png", "file_name": "1.png"}],

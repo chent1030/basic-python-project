@@ -66,6 +66,7 @@ C04_RESPONSE_KEYS = {
     "reason",
     "evidence",
     "photo_object_keys",
+    "photo_urls",        # Java 直传 URL 形态的照片引用（与 object_keys 二选一）
     "item_snapshot",
     "stage_trace",       # 两段式判定轨迹
     "model_version",

@@ -1,9 +1,5 @@
 enabled: true
-internal_trust: true
-# 内部共享密钥：跨网络部署时 Java 以 Bearer <key> 直连；生产用 env CPS_INTERNAL_API_KEY 注入。
-internal_api_key: ""
-trusted_networks:
-  - 172.16.0.0/12
+# 内网直连（容器网络）：Java 侧只填 Python 地址即可，不校验 token/密钥/IP 白名单。
 max_rounds: 40
 max_image_bytes: 10000000
 max_images: 20

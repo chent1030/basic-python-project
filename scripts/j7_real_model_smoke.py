@@ -1,7 +1,7 @@
 """波次 7 真实模型冒烟（清单⑦ + ASR，手动运行，不进 pytest）。
 
 覆盖三段真实链路（配置可用则真调用、未配则 SKIPPED+原因，**不伪造**）：
-- C-04 辅房点检视觉判定：自造小图 PUT 进 RustFS（幂等覆盖同 key）→
+- C-04 辅房点检视觉判定：自造小图 PUT 进 MinIO（幂等覆盖同 key）→
   RoomCheckJudgeService.judge() 全链真调用（开关走生产回退链）。
 - C-06 语音转写 ASR：合成 1 秒 440Hz 单频 WAV → OpenAiCompatibleAsrClient
   .transcribe() 真调用（注意：合成音频无人声，转写文本可能为空——如实记录，
@@ -9,7 +9,7 @@
 - C-01 初审模型检查：DashScopeModelClient.complete_text_json() 真调用
   （文本语义有效性一例）。
 
-幂等可重跑：RustFS PUT 同 key 覆盖、幂等键固定、ASR/文本调用无副作用。
+幂等可重跑：MinIO PUT 同 key 覆盖、幂等键固定、ASR/文本调用无副作用。
 输出：人读摘要（stdout）+ JSON（默认 scripts/j7_smoke_result.json）。
 
 用法：
@@ -136,26 +136,26 @@ async def smoke_c04(result: dict) -> None:
         section["reason"] = f"C-04 视觉判定开关未启用（{source}），不伪造判定"
         return
 
-    rustfs = settings.rustfs
-    if rustfs.unavailable_reason:
+    minio = settings.minio
+    if minio.unavailable_reason:
         section["status"] = "SKIPPED"
-        section["reason"] = f"RustFS 未配置：{rustfs.unavailable_reason}"
+        section["reason"] = f"MinIO 未配置：{minio.unavailable_reason}"
         return
 
-    # 自造两张纯色 PNG PUT 进 RustFS（同 key 覆盖 = 幂等可重跑）
+    # 自造两张纯色 PNG PUT 进 MinIO（同 key 覆盖 = 幂等可重跑）
     from app.projects.cps.weekly_report.infrastructure.config import (
-        WeeklyReportRustFSSettings,
+        WeeklyReportMinIOSettings,
     )
-    from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
-        RustFSWeeklyReportUploader,
+    from app.projects.cps.weekly_report.infrastructure.minio_uploader import (
+        MinIOWeeklyReportUploader,
     )
 
-    uploader = RustFSWeeklyReportUploader(
-        WeeklyReportRustFSSettings(
-            endpoint=rustfs.endpoint,
-            access_key=rustfs.access_key,
-            secret_key=rustfs.secret_key,
-            bucket=rustfs.bucket,
+    uploader = MinIOWeeklyReportUploader(
+        WeeklyReportMinIOSettings(
+            endpoint=minio.endpoint,
+            access_key=minio.access_key,
+            secret_key=minio.secret_key,
+            bucket=minio.bucket,
         )
     )
     before_key, after_key = f"{SMOKE_KEY_PREFIX}/before.png", f"{SMOKE_KEY_PREFIX}/after.png"
@@ -186,7 +186,7 @@ async def smoke_c04(result: dict) -> None:
     section["model_version"] = judged.model_version
     section["stage_trace"] = judged.stage_trace
     if judged.status == "SKIPPED":
-        section["note"] = "真实链路完成但结果为 SKIPPED（开关/RustFS/模型端拒判），如实记录"
+        section["note"] = "真实链路完成但结果为 SKIPPED（开关/MinIO/模型端拒判），如实记录"
 
 
 async def smoke_c06(result: dict) -> None:

@@ -1,12 +1,7 @@
 enabled: true
-# 内网直连信任：Java 后端（CpsAgentFrameworkClient）不带 token 调用 /api/v1/agent|cps/*，
-# 凭 trusted_networks 网段放行并授予 legacy-cps 全角色；生产部署应收紧网段。
-internal_trust: true
-# 内部共享密钥：跨网络部署时 Java 以 Authorization: Bearer <key> 直连（生产建议用 env CPS_INTERNAL_API_KEY 注入，勿提交真实值）。
-internal_api_key: ""
-trusted_networks:
-  - 127.0.0.1/32
-  - ::1/128
+# 内网直连：Java 后端（CpsAgentFrameworkClient）只填 Python 侧地址即可调用
+# /api/v1/agent*，不带 token；Python 侧不再校验共享密钥（CPS_INTERNAL_API_KEY）
+# 与 IP 白名单（trusted_networks），见 app/api/v1/endpoints/agent_runs.py::principal。
 max_rounds: 40
 max_image_bytes: 10000000
 max_images: 20

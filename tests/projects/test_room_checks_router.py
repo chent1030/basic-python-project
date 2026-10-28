@@ -2,7 +2,7 @@
 
 覆盖目标：
 1. /judge 端点 round-trip：cps_admin 角色正常 200
-2. /judge 端点 401：缺 principal 时拒访
+2. /judge 端点：无 token（内网直连）放行 / 坏 token 401
 3. /judge 端点 403：非 cps_admin 角色
 4. /judge 端点 422：缺必填字段 fingerprint / roomType / checkItemId / photoObjectKey
 5. /judge 端点 422：roomType 取值非法
@@ -121,19 +121,34 @@ def test_judge_endpoint_returns_problem_on_type_mismatch() -> None:
     assert body["score"] == 0
 
 
-def test_judge_endpoint_unauthenticated_401() -> None:
-    """无 principal（default role=[]）→ 401 Missing bearer token（应用层无 token）。
+def test_judge_endpoint_internal_direct_accepted() -> None:
+    """无 token（内网直连）→ 200：不再有密钥/IP 白名单校验。
 
-    注意：build_app 默认注入 principal；这里通过移除 override 触发 401。
+    build_app 默认注入 principal；这里移除 override 走真实 principal，验证
+    无 Authorization 头即被当作内网直连（legacy-cps，含 cps_admin），
+    因此 Java 侧只填地址即可调用。
     """
     svc = _build_service_with_results(_scripted_pass_results())
     app = build_app(service=svc)
     app.dependency_overrides.pop(principal, None)
-    # 127.0.0.1 不在 trusted_networks 中 → 401
     resp = TestClient(app).post(
         "/api/v1/agent/room-checks/v2/judge",
         json=_payload(),
-        headers={"x-forwarded-for": "203.0.113.42"},  # TEST-NET-3 不可信
+        headers={"x-forwarded-for": "203.0.113.42"},  # 任意来源 IP 均不再影响判定
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["fingerprint"] == "rc-fp-001"
+
+
+def test_judge_endpoint_invalid_token_401() -> None:
+    """带无法解析的 Bearer → 401（不静默降级成内网直连）。"""
+    svc = _build_service_with_results(_scripted_pass_results())
+    app = build_app(service=svc)
+    app.dependency_overrides.pop(principal, None)
+    resp = TestClient(app).post(
+        "/api/v1/agent/room-checks/v2/judge",
+        json=_payload(),
+        headers={"Authorization": "Bearer not-a-jwt"},
     )
     assert resp.status_code == 401
 

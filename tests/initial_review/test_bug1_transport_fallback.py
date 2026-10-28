@@ -1,4 +1,4 @@
-"""BUG-1 回归测试：RustFS TCP 级失败与意外异常不得 500 / 卡 RUNNING。
+"""BUG-1 回归测试：MinIO TCP 级失败与意外异常不得 500 / 卡 RUNNING。
 
 背景（波次 6 A10/C7 发现）：
 - fetch_bytes 只包 HTTP≠200，httpx.ConnectError 裸抛穿透两层 except → HTTP 500；
@@ -17,8 +17,8 @@ import pytest
 from app.projects.cps.initial_review.application.check_pipeline import CheckPipeline
 from app.projects.cps.initial_review.infrastructure.model_client import (
     ModelCallError,
-    RustFSObjectFetcher,
-    RustFSSettings,
+    MinIOObjectFetcher,
+    MinIOSettings,
 )
 
 from .conftest import (
@@ -32,25 +32,25 @@ from .test_a10_boundaries import FakeModelCheckClient
 from .test_check_pipeline import image_result, snapshot_of, valid_field
 
 
-async def test_rustfs_connect_error_degrades_not_500() -> None:
-    """RustFS TCP 连接失败（ConnectError）→ 与 503 同语义：DEGRADED + SKIPPED 不伪造。"""
+async def test_minio_connect_error_degrades_not_500() -> None:
+    """MinIO TCP 连接失败（ConnectError）→ 与 503 同语义：DEGRADED + SKIPPED 不伪造。"""
 
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused")
 
-    cfg = RustFSSettings(
-        endpoint="http://rustfs.test",
+    cfg = MinIOSettings(
+        endpoint="http://minio.test",
         access_key="ak",
         secret_key="sk",
         bucket="cps-attachments",
     )
-    fetcher = RustFSObjectFetcher(cfg, transport=httpx.MockTransport(handler))
+    fetcher = MinIOObjectFetcher(cfg, transport=httpx.MockTransport(handler))
     pipe = CheckPipeline(
         make_settings(),
         model_client=FakeModelCheckClient(
             results=[valid_field() for _ in range(3)] + [image_result()]
         ),
-        rustfs=fetcher,
+        minio=fetcher,
     )
     snap = snapshot_of(
         before_attachments=[{"object_key": "before/1.png", "file_name": "1.png"}],
@@ -70,13 +70,13 @@ async def test_fetch_bytes_transport_error_wrapped() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused")
 
-    cfg = RustFSSettings(
-        endpoint="http://rustfs.test",
+    cfg = MinIOSettings(
+        endpoint="http://minio.test",
         access_key="ak",
         secret_key="sk",
         bucket="cps-attachments",
     )
-    fetcher = RustFSObjectFetcher(cfg, transport=httpx.MockTransport(handler))
+    fetcher = MinIOObjectFetcher(cfg, transport=httpx.MockTransport(handler))
     with pytest.raises(ModelCallError) as ei:
         await fetcher.fetch_bytes("any/object.png")
     assert "连接失败" in str(ei.value)

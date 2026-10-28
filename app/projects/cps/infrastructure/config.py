@@ -31,12 +31,14 @@ class EmbeddingsConfig(Contract):
 
 
 class CPSConfig(Contract):
+    """CPS 项目业务配置。
+
+    内网直连口径（用户要求）：Java 后端只需配置 Python 侧地址即可调用
+    ``/api/v1/agent*``，不再有共享密钥、IP 白名单或 ``internal_trust`` 开关
+    （见 ``app/api/v1/endpoints/agent_runs.py::principal``）。
+    """
+
     enabled: bool = True
-    internal_trust: bool = False
-    # 内部共享密钥（跨网络部署）：与 Java 侧 CPS_AGENT_FRAMEWORK_API_TOKEN 配对，
-    # 请求方以 Authorization: Bearer <key> 直连；env CPS_INTERNAL_API_KEY 优先于此处。
-    internal_api_key: str = ""
-    trusted_networks: list[str] = Field(default_factory=lambda: ["127.0.0.1/32", "::1/128"])
     max_rounds: int = Field(default=40, ge=1, le=200)
     max_image_bytes: int = Field(default=10_000_000, ge=1024, le=10_000_000)
     max_images: int = Field(default=20, ge=1, le=50)

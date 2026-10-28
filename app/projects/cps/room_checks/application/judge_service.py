@@ -50,6 +50,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import threading
 import time
@@ -58,7 +59,10 @@ from collections.abc import Awaitable
 from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 
+import httpx
+
 from app.projects.cps.initial_review.infrastructure.model_client import (
+    MIME_BY_SUFFIX,
     ModelCallError,
     ModelUnavailableError,
 )
@@ -85,6 +89,12 @@ from app.projects.cps.room_checks.infrastructure.vision_client import (
 )
 
 logger = logging.getLogger("cps_agent.room_checks.b6")
+
+#: Java 直传 photo_url 的拉取体积上限（与 initial_review URL 附件同量级）
+B6_MAX_PHOTO_BYTES = 10_000_000
+
+#: 无注入 data URL 且无 photo_url 时的占位图（保持既有单测/冒烟行为）
+PLACEHOLDER_PHOTO_DATA_URL = "data:image/jpeg;base64,/9j/test"
 
 
 #: 三级判定版本锚点（响应 model_version 字段）
@@ -219,6 +229,7 @@ class RoomCheckB6JudgeService:
         stage_timeout_seconds: float = DEFAULT_STAGE_TIMEOUT_SECONDS,
         photo_data_url: str | None = None,
         observed_meta: dict[str, Any] | None = None,
+        url_transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._vision_client: VisionModelClient = vision_client or QwenVLPlusClient()
         self._callback_client: RoomCheckCallbackClient = (
@@ -226,8 +237,9 @@ class RoomCheckB6JudgeService:
         )
         self._prompt_builder = prompt_builder or PromptBuilder()
         self._stage_timeout = max(1.0, float(stage_timeout_seconds))
-        # 照片 data URL（真实生产从 RustFS 拉取；测试可注入固定 data URL）
-        self._photo_data_url = photo_data_url or "data:image/jpeg;base64,/9j/test"
+        # 照片 data URL：显式注入 > evidence.photo_url（HTTP 拉取）> 占位图
+        self._photo_data_url = photo_data_url
+        self._url_transport = url_transport
         # 照片元数据（EXIF/filename/upload tag）——type-match 第一级 prompt 注入
         self._observed_meta = dict(observed_meta or {})
         self._cache = _ResultCache()
@@ -298,11 +310,13 @@ class RoomCheckB6JudgeService:
         score = SCORE_BASE
 
         expected_match = _coerce_match_type(evidence.expected_match_type, evidence.room_type)
+        # 照片统一转 data URL（URL 形态按 evidence.photo_url 现拉，不落对象存储）
+        photo_data_url = await self._resolve_photo_data_url(evidence)
         # 一级 type-match
         type_prompt = self._prompt_builder.build_type_match_prompt(
             evidence, observed_meta=self._observed_meta
         )
-        type_result = await self._invoke(evidence, type_prompt)
+        type_result = await self._invoke(evidence, type_prompt, photo_data_url)
         raw_outputs["type_match"] = type_result.raw_text
         if not self._parse_type_match_ok(type_result):
             return self._build_verdict(
@@ -317,7 +331,7 @@ class RoomCheckB6JudgeService:
 
         # 二级 content
         content_prompt = self._prompt_builder.build_content_prompt(evidence)
-        content_result = await self._invoke(evidence, content_prompt)
+        content_result = await self._invoke(evidence, content_prompt, photo_data_url)
         raw_outputs["content"] = content_result.raw_text
         content_match, matched, missing = self._parse_content(content_result)
         if not content_match:
@@ -336,7 +350,7 @@ class RoomCheckB6JudgeService:
             matched_keywords=matched,
             missing_keywords=missing,
         )
-        evidence_result = await self._invoke(evidence, evidence_prompt)
+        evidence_result = await self._invoke(evidence, evidence_prompt, photo_data_url)
         raw_outputs["evidence"] = evidence_result.raw_text
         evidence_strength, evidence_notes = self._parse_evidence(evidence_result)
         if evidence_strength in {"WEAK", "NONE"}:
@@ -360,12 +374,57 @@ class RoomCheckB6JudgeService:
             model_name=evidence_result.model,
         )
 
-    # -- 单阶段调用 + 容错 -------------------------------------------------------
-    async def _invoke(self, evidence: RoomCheckEvidence, prompt: str) -> VisionCallResult:
+    # -- 照片解析 + 单阶段调用 + 容错 ---------------------------------------------
+    async def _resolve_photo_data_url(self, evidence: RoomCheckEvidence) -> str:
+        """照片 → data URL：显式注入 > evidence.photo_url（HTTP GET）> 占位图。
+
+        URL 拉取失败 → JudgeTechnicalError → judge() 转固定 fallback（与模型
+        阶段技术失败同语义，不伪造 PASS）。
+        """
+        if self._photo_data_url:
+            return self._photo_data_url
+        if evidence.photo_url:
+            # 已是 data URL（Java 内联/联调直传）→ 直接送模型，不再发起 HTTP
+            if evidence.photo_url.startswith("data:"):
+                return evidence.photo_url
+            return await self._fetch_photo_url(evidence.photo_url)
+        return PLACEHOLDER_PHOTO_DATA_URL
+
+    async def _fetch_photo_url(self, url: str) -> str:
+        """HTTP(S) GET → data URL（超时/连接失败/非 200/空/超大 → 技术失败）。"""
+        try:
+            async with httpx.AsyncClient(
+                transport=self._url_transport,
+                follow_redirects=True,
+                timeout=self._stage_timeout,
+            ) as client:
+                resp = await client.get(url)
+        except httpx.TransportError as exc:
+            raise JudgeTechnicalError(
+                f"照片 URL 拉取失败 {url}：{type(exc).__name__}: {exc}"
+            ) from exc
+        if resp.status_code != 200:
+            raise JudgeTechnicalError(f"照片 URL {url} 返回 HTTP {resp.status_code}")
+        if not resp.content:
+            raise JudgeTechnicalError(f"照片 URL {url} 返回空响应")
+        if len(resp.content) > B6_MAX_PHOTO_BYTES:
+            raise JudgeTechnicalError(
+                f"照片 URL {url} 体积 {len(resp.content)} 字节超过上限 {B6_MAX_PHOTO_BYTES}"
+            )
+        mime = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+        if not mime.startswith("image/"):
+            path = url.split("?", 1)[0].split("#", 1)[0].rsplit("/", 1)[-1]
+            suffix = ("." + path.rsplit(".", 1)[-1].lower()) if "." in path else ""
+            mime = MIME_BY_SUFFIX.get(suffix, "image/jpeg")
+        return "data:" + mime + ";base64," + base64.b64encode(resp.content).decode("ascii")
+
+    async def _invoke(
+        self, evidence: RoomCheckEvidence, prompt: str, photo_data_url: str
+    ) -> VisionCallResult:
         try:
             async with asyncio.timeout(self._stage_timeout):
                 return await self._vision_client.complete_vision(
-                    prompt, image_data_urls=(self._photo_data_url,)
+                    prompt, image_data_urls=(photo_data_url,)
                 )
         except (ModelUnavailableError, ModelCallError, TimeoutError) as exc:
             raise JudgeTechnicalError(f"视觉判定阶段失败：{exc}") from exc

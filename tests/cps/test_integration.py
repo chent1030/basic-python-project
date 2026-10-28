@@ -48,7 +48,14 @@ async def test_api_auth_owner_tenant_schema_and_no_frontend(environment):
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
         endpoint = "/api/v1/cps/inspections"
-        assert (await client.get(endpoint)).status_code == 401
+        # 内网直连（无凭证）：不再 401，签发 legacy-cps 身份（租户 local-factory，空列表）。
+        direct = await client.get(endpoint)
+        assert direct.status_code == 200, direct.text
+        assert direct.json() == []
+        # 坏 token 仍 401（不回退成内网直连）；refresh token 403 由框架层拦截。
+        assert (
+            await client.get(endpoint, headers={"Authorization": "Bearer not-a-jwt"})
+        ).status_code == 401
         body = {
             "goal": "巡检",
             "line_info": {"line_id": "L1", "area": "A", "supervisor_id": "S"},

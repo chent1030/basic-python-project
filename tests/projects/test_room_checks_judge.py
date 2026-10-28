@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 
+import httpx
 import pytest
 
 from app.projects.cps.initial_review.infrastructure.model_client import (
@@ -171,6 +172,8 @@ def _build_service(
     *,
     results: list[VisionCallResult] | None = None,
     exception: Exception | None = None,
+    url_transport: httpx.AsyncBaseTransport | None = None,
+    photo_data_url: str | None = None,
 ) -> tuple[RoomCheckB6JudgeService, FakeVisionModelClient]:
     if exception is not None:
         client = FakeVisionModelClient(results=[exception])
@@ -182,6 +185,8 @@ def _build_service(
             vision_client=client,
             callback_client=cb,
             stage_timeout_seconds=5.0,
+            photo_data_url=photo_data_url,
+            url_transport=url_transport,
         ),
         client,
     )
@@ -421,3 +426,56 @@ async def test_content_mismatch_alone_makes_problem() -> None:
     expected = 100 - SCORE_DEDUCT_CONTENT_MISMATCH  # 60
     assert v.score == expected
     assert v.overall == JudgeVerdict.PARTIAL
+
+# -- Java 直传 photo_url：HTTP 拉取 → data URL ---------------------------------
+
+def _photo_transport(
+    *,
+    status: int = 200,
+    content: bytes = b"\xff\xd8\xff\xe0jpeg-bytes",
+    content_type: str | None = "image/jpeg",
+) -> httpx.MockTransport:
+    def handler(request: httpx.Request) -> httpx.Response:
+        headers = {"content-type": content_type} if content_type else {}
+        return httpx.Response(status, headers=headers, content=content)
+
+    return httpx.MockTransport(handler)
+
+
+@pytest.mark.asyncio
+async def test_photo_url_fetched_and_sent_as_data_url() -> None:
+    svc, client = _build_service(
+        results=[_typed_ok(), _content_pass(), _evidence_strong()],
+        url_transport=_photo_transport(),
+    )
+    await svc.judge(
+        make_evidence(photo_object_key="", photo_url="http://java.local/a.jpg")
+    )
+    assert client.calls[0]["images"][0].startswith("data:image/jpeg;base64,")
+
+
+@pytest.mark.asyncio
+async def test_photo_url_http_error_falls_back_to_problem() -> None:
+    svc, client = _build_service(
+        results=[], url_transport=_photo_transport(status=500)
+    )
+    v = await svc.judge(
+        make_evidence(photo_object_key="", photo_url="http://java.local/a.jpg")
+    )
+    assert v.overall == JudgeVerdict.PROBLEM
+    assert v.score == 0
+    assert client.calls == []  # 取图失败前不调模型
+
+
+@pytest.mark.asyncio
+async def test_injected_photo_data_url_wins_over_photo_url() -> None:
+    svc, client = _build_service(
+        results=[_typed_ok(), _content_pass(), _evidence_strong()],
+        url_transport=_photo_transport(status=500),  # 若真去拉取会失败
+        photo_data_url="data:image/jpeg;base64,injected",
+    )
+    v = await svc.judge(
+        make_evidence(photo_object_key="", photo_url="http://java.local/a.jpg")
+    )
+    assert v.overall == JudgeVerdict.PASS
+    assert client.calls[0]["images"] == ["data:image/jpeg;base64,injected"]

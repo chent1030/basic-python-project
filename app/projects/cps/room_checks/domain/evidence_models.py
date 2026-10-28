@@ -59,9 +59,9 @@ class RoomCheckEvidence:
             端通常用 ``room-check-{checkItemId}-{submissionId}-{attempt}``）。
         room_type: 辅房类型（与 ``RoomType`` 一致）。
         check_item_id: 点检项 ID（与 Java 端 ``cps_room_check_item.id`` 对齐）。
-        photo_object_key: RustFS 对象键（object_key，逗号分隔多张）。
+        photo_object_key: MinIO 对象键（object_key，逗号分隔多张）。
         photo_url: 可选 HTTP URL（绕开 object_key 直接送视觉模型；与
-            object_key 互斥——优先使用 object_key 走 RustFS 凭据链）。
+            object_key 互斥——优先使用 object_key 走 MinIO 凭据链）。
         expected_match_type: 期望照片主体类型（如「地面」「配电柜」），用于
             一级 type-match 校验。
         expected_keywords: 期望出现的关键物证（逗号或列表分隔），用于二级

@@ -1,8 +1,8 @@
-"""周报运行时配置（yaml + env 优先，复用既有 RustFS 配置 + C3 调度开关）。
+"""周报运行时配置（yaml + env 优先，复用既有 MinIO 配置 + C3 调度开关）。
 
 - yaml: ``config/config.yaml`` 的 ``cps_agent.weekly_report`` 节（本期新增）；
 - env:
-    - ``CPS_STORAGE_*``         ：RustFS 接入（沿用 A7 / initial_review 同套）；
+    - ``CPS_STORAGE_*``         ：MinIO 接入（沿用 A7 / initial_review 同套）；
     - ``CPS_WEEKLY_REPORT_SCHED_ENABLED`` ：C3 调度开关（默认 ``false`` 防
       开发机周一早误触发；生产部署置 ``true``）；
     - ``CPS_WEEKLY_REPORT_TYPES`` ：逗号分隔配置周报分类列表（默认两分类）；
@@ -24,14 +24,14 @@ from app.projects.cps.initial_review.infrastructure.config import (  # noqa: F40
 # 周报专用 env
 ENV_SCHED_ENABLED = "CPS_WEEKLY_REPORT_SCHED_ENABLED"
 ENV_REPORT_TYPES = "CPS_WEEKLY_REPORT_TYPES"
-ENV_RUSTFS_BUCKET = "CPS_WEEKLY_REPORT_BUCKET"
+ENV_MINIO_BUCKET = "CPS_WEEKLY_REPORT_BUCKET"
 
 DEFAULT_REPORT_TYPES = ("cps-issue-inspection", "room-check")
 
 
 @dataclass(frozen=True)
-class WeeklyReportRustFSSettings:
-    """RustFS 周报上传配置（沿用 A7 同套 SigV4；bucket 可独立）。"""
+class WeeklyReportMinIOSettings:
+    """MinIO 周报上传配置（沿用 A7 同套 SigV4；bucket 可独立）。"""
 
     endpoint: str
     access_key: str
@@ -51,7 +51,7 @@ class WeeklyReportRustFSSettings:
             if not value
         ]
         if missing:
-            return "RustFS 周报配置不完整（缺少 " + "/".join(missing) + "）"
+            return "MinIO 周报配置不完整（缺少 " + "/".join(missing) + "）"
         return None
 
 
@@ -61,7 +61,7 @@ class WeeklyReportSettings:
 
     sched_enabled: bool
     report_types: tuple[str, ...]
-    rustfs: WeeklyReportRustFSSettings
+    minio: WeeklyReportMinIOSettings
     push_unavailable_reason: str = "推送未配置"
     # 调度 cron 与 misfire_grace_time 由 tasks/weekly_report_task.py 显式传入
     cron_expression: str = "0 8 * * MON"
@@ -76,14 +76,14 @@ def load_weekly_report_settings(
     env_map = os.environ if env is None else env
 
     cfg = settings.cps_agent
-    # 沿用 initial_review.rustfs 作为兜底（endpoint/ak/sk 与 Java 侧部署同源）
-    rs = cfg.initial_review.rustfs
+    # 沿用 initial_review.minio 作为兜底（endpoint/ak/sk 与 Java 侧部署同源）
+    rs = cfg.initial_review.minio
 
-    # 周报专属 bucket：env → yaml.weekly_report.rustfs_bucket → attachments 桶
+    # 周报专属 bucket：env → yaml.weekly_report.minio_bucket → attachments 桶
     weekly_cfg = getattr(cfg, "weekly_report", None)
-    yaml_bucket = getattr(weekly_cfg, "rustfs_bucket", "") if weekly_cfg else ""
-    rustfs_bucket = (
-        env_map.get(ENV_RUSTFS_BUCKET) or yaml_bucket or rs.bucket or ""
+    yaml_bucket = getattr(weekly_cfg, "minio_bucket", "") if weekly_cfg else ""
+    minio_bucket = (
+        env_map.get(ENV_MINIO_BUCKET) or yaml_bucket or rs.bucket or ""
     )
 
     sched_raw = env_map.get(ENV_SCHED_ENABLED)
@@ -102,21 +102,21 @@ def load_weekly_report_settings(
     return WeeklyReportSettings(
         sched_enabled=sched_enabled,
         report_types=report_types,
-        rustfs=WeeklyReportRustFSSettings(
+        minio=WeeklyReportMinIOSettings(
             endpoint=env_map.get(ENV_STORAGE_ENDPOINT) or rs.endpoint,
             access_key=env_map.get(ENV_STORAGE_ACCESS_KEY) or rs.access_key,
             secret_key=env_map.get(ENV_STORAGE_SECRET_KEY) or rs.secret_key,
-            bucket=rustfs_bucket,
+            bucket=minio_bucket,
         ),
     )
 
 
 __all__ = [
     "DEFAULT_REPORT_TYPES",
-    "ENV_RUSTFS_BUCKET",
+    "ENV_MINIO_BUCKET",
     "ENV_REPORT_TYPES",
     "ENV_SCHED_ENABLED",
-    "WeeklyReportRustFSSettings",
+    "WeeklyReportMinIOSettings",
     "WeeklyReportSettings",
     "load_weekly_report_settings",
 ]

@@ -3,7 +3,7 @@
 五态：PENDING / RUNNING / ARCHIVING / COMPLETED / FAILED。
 - PENDING  ：行刚创建（数据库唯一约束兜底同窗口幂等）；
 - RUNNING  ：已锁定、正在生成报告内容；
-- ARCHIVING：已生成 HTML、上传 RustFS 中；
+- ARCHIVING：已生成 HTML、上传 MinIO 中；
 - COMPLETED：归档成功，进入推送流程（push_status 决定推送侧最终语义）；
 - FAILED   ：生成/归档失败，含 error_code 与中文 error 文案（Java 侧运维查询友好）。
 """

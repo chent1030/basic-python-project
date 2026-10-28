@@ -184,14 +184,14 @@ async def test_asr_auth_rejected_skips_and_caches():
 
 
 @pytest.mark.asyncio
-async def test_rustfs_config_missing_skips():
-    fetcher = FakeAudioFetcher(fail_with=ModelUnavailableError("RustFS 配置不完整"))
+async def test_minio_config_missing_skips():
+    fetcher = FakeAudioFetcher(fail_with=ModelUnavailableError("MinIO 配置不完整"))
     svc = _service(fetcher=fetcher)
     result = await svc.transcribe(
         _req(audio_object_key="speech/2026/a.wav", audio_base64=None)
     )
     assert result.status == STATUS_SKIPPED
-    assert "RustFS" in result.metadata["skip_reason"]
+    assert "MinIO" in result.metadata["skip_reason"]
 
 
 # --- 技术失败 → 502 不缓存 ---------------------------------------------------
@@ -207,7 +207,7 @@ async def test_asr_call_error_is_technical_and_not_cached():
 
 
 @pytest.mark.asyncio
-async def test_rustfs_fetch_failure_is_technical():
+async def test_minio_fetch_failure_is_technical():
     fetcher = FakeAudioFetcher(fail_with=ModelCallError("S3 503"))
     svc = _service(fetcher=fetcher)
     with pytest.raises(SpeechTechnicalError, match="音频对象获取失败"):
@@ -218,7 +218,7 @@ async def test_rustfs_fetch_failure_is_technical():
 
 # --- object_key 路径 ---------------------------------------------------------
 @pytest.mark.asyncio
-async def test_object_key_fetch_uses_rustfs_and_format_passthrough():
+async def test_object_key_fetch_uses_minio_and_format_passthrough():
     fetcher = FakeAudioFetcher(audio=b"object-audio")
     svc = _service(results=[_ok_asr()], fetcher=fetcher)
     result = await svc.transcribe(

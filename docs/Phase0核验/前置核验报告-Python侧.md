@@ -7,6 +7,10 @@
 
 ---
 
+> **口径更新（2026-10-28）**：按用户要求已取消 Python↔Java 内部鉴权（只填地址，不再有 token/IP 白名单/共享密钥；`internal_trust`、`internal_api_key`、`trusted_networks`、`CPS_INTERNAL_API_KEY`、`CPS_CALLBACK_SHARED_TOKEN` 均已删除）。本报告成文于变更之前，文中关于 `internal_trust` / 网段校验 / 共享密钥的建议仅作历史记录，落地口径以 `app/api/v1/endpoints/agent_runs.py::principal` 与 `docs/后端架构与技术设计考虑.md` §网络边界 为准。
+
+---
+
 ## ① 结论摘要
 
 **总判断：可以立即启动 A5（文本规则引擎）开发；C1（周报 Skill）可启动但首日需先补齐两项工程决策（PG 表迁移 + object 存储客户端选型）。**

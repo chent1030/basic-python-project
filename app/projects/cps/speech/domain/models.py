@@ -6,7 +6,7 @@
 - 目标字段白名单 = D-03 拍板的三字段：原因 / 短期措施 / 长期措施，
   非白名单一律拒绝（422），不做通用转写入口；
 - ``TRANSCRIBED``：ASR 转写完成，text 供 Java 回填表单；
-- ``SKIPPED``：ASR 未配置/禁用/RustFS 缺失等前置条件不具备 → 不伪造转写
+- ``SKIPPED``：ASR 未配置/禁用/MinIO 缺失等前置条件不具备 → 不伪造转写
   （对齐 A7/B6「不伪造」原则），Java 引导用户手工输入。
 
 技术失败（ASR 网关异常/超时/响应无效）不落上述业务状态：服务层抛
@@ -65,7 +65,7 @@ class SpeechTranscribeRequest:
     """C-06 入参（音频引用 + 目标字段）。
 
     音频来源二选一（互斥，契约口径）：
-    - ``audio_object_key``：RustFS 对象键（移动端先上传，Python 内网取流）；
+    - ``audio_object_key``：MinIO 对象键（移动端先上传，Python 内网取流）；
     - ``audio_base64``：内嵌 base64 音频（联调过渡/小音频直传）。
 
     幂等键惯例：``speech-{submissionId}-{field}-{attempt}``（Java 侧同源生成；

@@ -101,7 +101,7 @@ class InitialReviewService:
         check_runner: CheckRunner | None = None,
         callback_dispatcher: CallbackDispatcher | None = None,
         model_client: Any | None = None,
-        rustfs_fetcher: Any | None = None,
+        minio_fetcher: Any | None = None,
         history_loader: Any | None = None,
         memory_retriever: Any | None = None,
     ) -> None:
@@ -115,7 +115,7 @@ class InitialReviewService:
         self._pipeline = CheckPipeline(
             settings,
             model_client=model_client,
-            rustfs=rustfs_fetcher,
+            minio=minio_fetcher,
             history_loader=history_loader,
         )
         # 波次 9 · FR-09 长期记忆：AI 初审前调用 MemoryRetrievalService 检索历史同类

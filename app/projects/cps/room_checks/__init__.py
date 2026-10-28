@@ -5,5 +5,5 @@
 - application：判定服务（幂等 + 两阶段判定链编排）；
 - infrastructure：prompt 常量（版本化）。
 
-模型客户端与 RustFS 取图复用 initial_review 基建（model_client.py），不重复造轮。
+模型客户端与 MinIO 取图复用 initial_review 基建（model_client.py），不重复造轮。
 """

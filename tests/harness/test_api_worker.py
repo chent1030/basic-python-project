@@ -10,22 +10,13 @@ from app.core.security import create_access_token, create_refresh_token
 from app.harness.kernel import AgentDefinition, Approval, Runtime, SQLiteRepository, Step, Worker
 
 
-def write_cps_config(path, internal_trust=False, trusted_networks=None):
+def write_cps_config(path):
     """Framework tests must never read the repository business config (config/cps.yaml).
 
-    httpx.ASGITransport pins the client address to 127.0.0.1, which is inside the
-    default trusted_networks; only explicit CPS_CONFIG isolation keeps the API
-    auth surface deterministic (P0-1).
+    内网直连已无开关（无 internal_trust / trusted_networks），隔离 CPS_CONFIG 只是
+    让框架测试不依赖仓库业务配置内容（P0-1）。
     """
-    path.write_text(
-        yaml.safe_dump(
-            {
-                "internal_trust": internal_trust,
-                "trusted_networks": trusted_networks if trusted_networks is not None else [],
-            }
-        ),
-        encoding="utf-8",
-    )
+    path.write_text(yaml.safe_dump({"enabled": True}), encoding="utf-8")
     return path
 
 
@@ -65,7 +56,12 @@ def auth(tenant="tenant", roles=None, refresh=False):
 
 async def test_api_auth_tenant_and_validation(environment):
     runtime, client = environment
-    assert (await client.get("/agent-runs")).status_code == 401
+    # 无 token = 内网直连（只有 CPS 业务角色）→ 框架接口 403，不再 401。
+    assert (await client.get("/agent-runs")).status_code == 403
+    # 401 只保留给无法解析的 Bearer。
+    assert (
+        await client.get("/agent-runs", headers={"Authorization": "Bearer not-a-jwt"})
+    ).status_code == 401
     assert (await client.get("/agent-runs", headers=auth(refresh=True))).status_code == 403
     assert (await client.get("/agent-runs", headers=auth(roles=[]))).status_code == 403
     assert (
@@ -98,39 +94,18 @@ async def test_api_auth_tenant_and_validation(environment):
     ).status_code == 403
 
 
-async def test_api_principal_trust_boundaries(environment, tmp_path, monkeypatch):
-    """P0-1: internal trust must never mint framework roles from a bare IP.
+async def test_api_principal_internal_direct_never_mints_framework_roles(environment):
+    """P0-1: 内网直连（无 token）只给 CPS 业务角色，框架角色必须来自 JWT。
 
-    ASGITransport always presents client host 127.0.0.1, so the trusted-network
-    branch is exercised whenever trusted_networks contains 127.0.0.1/32.
+    ASGITransport 固定 client host 127.0.0.1；内网直连已无 IP 白名单/开关，
+    任何来源的无凭证请求都是同一个 legacy-cps 身份。
     """
     runtime, client = environment
-    # Fixture default: no trusted networks -> unauthenticated requests are rejected.
-    assert (await client.get("/agent-runs")).status_code == 401
-    # Trusted network present but internal_trust disabled -> still no identity.
-    monkeypatch.setenv(
-        "CPS_CONFIG",
-        str(
-            write_cps_config(
-                tmp_path / "cps-off.yaml",
-                internal_trust=False,
-                trusted_networks=["127.0.0.1/32"],
-            )
-        ),
-    )
-    assert (await client.get("/agent-runs")).status_code == 401
-    # internal_trust enabled -> synthesized identity carries only CPS roles.
-    monkeypatch.setenv(
-        "CPS_CONFIG",
-        str(
-            write_cps_config(
-                tmp_path / "cps-on.yaml",
-                internal_trust=True,
-                trusted_networks=["127.0.0.1/32"],
-            )
-        ),
-    )
-    assert (await client.get("/agent-runs")).status_code == 403
+    direct = await client.get("/agent-runs")
+    assert direct.status_code == 403
+    assert direct.json()["detail"] == "Insufficient framework role"
+    # 带合法 JWT（run_reader）→ 200，证明框架路由仍靠 JWT 授权。
+    assert (await client.get("/agent-runs", headers=auth(roles=["run_reader"]))).status_code == 200
 
 
 async def test_worker_approval_resume_and_event_replay(environment):

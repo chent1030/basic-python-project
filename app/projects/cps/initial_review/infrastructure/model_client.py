@@ -1,4 +1,4 @@
-"""A7/A8 模型客户端 + object_key 附件读取（RustFS S3 GET）。
+"""A7/A8 模型客户端 + object_key 附件读取（MinIO S3 GET）。
 
 设计口径（波次 2 设计文档 §2.1/§2.4）：
 - 结构化输出：prompt 约定 JSON → 容错解析（剥代码围栏/截取首个 JSON 对象）→
@@ -8,7 +8,7 @@
   （上层记 SKIPPED + 原因）；
 - 复用全局 ``app.services.llm.llm`` 单例（LangChain ChatOpenAI，多 provider），
   单测注入 FakeModelCheckClient，真实冒烟走 scripts/wave2_real_model_smoke.py；
-- RustFS：S3 SigV4 GET（httpx + stdlib hmac/sha256，零新增依赖；对齐 Java 侧
+- MinIO：S3 SigV4 GET（httpx + stdlib hmac/sha256，零新增依赖；对齐 Java 侧
   MinIO SDK 同一凭据体系，endpoint 默认 http://127.0.0.1:9000）。
 """
 
@@ -27,8 +27,8 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from app.projects.cps.initial_review.infrastructure.config import (
+    MinIOSettings,
     ModelCheckSettings,
-    RustFSSettings,
 )
 
 logger = logging.getLogger(__name__)
@@ -288,7 +288,7 @@ class FakeModelCheckClient:
 
 
 # --------------------------------------------------------------------------
-# RustFS（S3 兼容）object_key → bytes/data URL
+# MinIO（S3 兼容）object_key → bytes/data URL
 # --------------------------------------------------------------------------
 
 #: 附件后缀 → MIME（base64 data URL 组装用；pipeline 复用）
@@ -303,19 +303,19 @@ MIME_BY_SUFFIX = {
 
 
 def _sign_key(secret: str, date: str, region: str, service: str) -> bytes:
-    """AWS SigV4 派生密钥（RustFS 兼容 MinIO，region 任意非空值）。"""
+    """AWS SigV4 派生密钥（MinIO 兼容 S3 协议，region 任意非空值）。"""
     k = hmac.new(("AWS4" + secret).encode(), date.encode(), hashlib.sha256).digest()
     for part in (region, service, "aws4_request"):
         k = hmac.new(k, part.encode(), hashlib.sha256).digest()
     return k
 
 
-class RustFSObjectFetcher:
+class MinIOObjectFetcher:
     """S3 SigV4 GET（path-style：{endpoint}/{bucket}/{object_key}）。"""
 
     def __init__(
         self,
-        cfg: RustFSSettings,
+        cfg: MinIOSettings,
         *,
         transport: httpx.AsyncBaseTransport | None = None,
         region: str = "us-east-1",
@@ -375,11 +375,11 @@ class RustFSObjectFetcher:
                 # TCP 级失败（连接拒绝/超时等）与 HTTP≠200 同等对待：
                 # 包成 ModelCallError → 管线记 DEGRADED 不伪造，绝不裸抛 500
                 raise ModelCallError(
-                    f"RustFS GET {object_key} 连接失败: {type(exc).__name__}: {exc}"
+                    f"MinIO GET {object_key} 连接失败: {type(exc).__name__}: {exc}"
                 ) from exc
         if resp.status_code != 200:
             raise ModelCallError(
-                f"RustFS GET {object_key} → HTTP {resp.status_code}: {resp.text[:120]}"
+                f"MinIO GET {object_key} → HTTP {resp.status_code}: {resp.text[:120]}"
             )
         return resp.content
 
@@ -397,6 +397,6 @@ __all__ = [
     "ModelCallError",
     "ModelCheckClient",
     "ModelUnavailableError",
-    "RustFSObjectFetcher",
+    "MinIOObjectFetcher",
     "extract_json_object",
 ]

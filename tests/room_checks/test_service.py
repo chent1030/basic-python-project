@@ -1,7 +1,7 @@
 """B6 判定链服务测试 — Fake 模型客户端/取图器，不触网。
 
 覆盖：两阶段判定链（类型不匹配短路 / JUDGED PASS|FAIL / UNJUDGEABLE）、
-SKIPPED 不伪造（禁用 / RustFS 缺失 / provider 未配置）、技术失败不缓存
+SKIPPED 不伪造（禁用 / MinIO 缺失 / provider 未配置）、技术失败不缓存
 （ModelCallError / 取图故障 / 超时）、幂等重放、照片预算上限。
 """
 
@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import asyncio
 
+import httpx
 import pytest
 
 from app.projects.cps.initial_review.infrastructure.config import (
     InitialReviewSettings,
     ModelCheckSettings,
-    RustFSSettings,
+    MinIOSettings,
 )
 from app.projects.cps.initial_review.infrastructure.model_client import (
     FakeModelCheckClient,
@@ -42,9 +43,11 @@ from app.projects.cps.room_checks.domain.models import (
 def make_settings(
     *,
     enabled: bool = True,
-    rustfs_ok: bool = True,
+    minio_ok: bool = True,
     budget: float = 90.0,
     max_photos: int = 4,
+    attachment_timeout: float = 15.0,
+    attachment_max_bytes: int = 10_000_000,
 ) -> InitialReviewSettings:
     return InitialReviewSettings(
         deadline_seconds=480.0,
@@ -54,13 +57,21 @@ def make_settings(
         callback_max_retries=2,
         callback_backoff_seconds=(30.0, 60.0),
         model_check=ModelCheckSettings(
-            enabled, "qwen", "qwen-plus", "Qwen2.5-VL-7B-Instruct", 0.1, budget, max_photos
+            enabled,
+            "qwen",
+            "qwen-plus",
+            "Qwen2.5-VL-7B-Instruct",
+            0.1,
+            budget,
+            max_photos,
+            attachment_timeout,
+            attachment_max_bytes,
         ),
-        rustfs=RustFSSettings(
-            endpoint="http://127.0.0.1:9000" if rustfs_ok else "",
-            access_key="minioadmin" if rustfs_ok else "",
-            secret_key="minioadmin" if rustfs_ok else "",
-            bucket="cps-attachments" if rustfs_ok else "",
+        minio=MinIOSettings(
+            endpoint="http://127.0.0.1:9000" if minio_ok else "",
+            access_key="minioadmin" if minio_ok else "",
+            secret_key="minioadmin" if minio_ok else "",
+            bucket="cps-attachments" if minio_ok else "",
         ),
     )
 
@@ -99,6 +110,7 @@ def make_service(
     results: list | None = None,
     unavailable: str | None = None,
     vision_enabled: bool | None = None,
+    url_transport: httpx.AsyncBaseTransport | None = None,
     **settings_kw,
 ) -> tuple[RoomCheckJudgeService, FakeModelCheckClient, FakeFetcher]:
     """构造被测服务。
@@ -117,6 +129,7 @@ def make_service(
         vision_enabled=(
             vision_enabled if vision_enabled is not None else settings.model_check.enabled
         ),
+        url_transport=url_transport,
     )
     return svc, client, fetcher
 
@@ -163,7 +176,7 @@ async def test_judged_pass_full_chain_and_evidence() -> None:
     }
     assert result.model_version == "room-judge/qwen-vl@1"
     assert result.prompt_versions[STAGE_TYPE_MATCH] == "room-type-match/qwen-vl@1"
-    # 照片经 RustFS 取出并转 data URL 送视觉模型
+    # 照片经 MinIO 取出并转 data URL 送视觉模型
     assert fetcher.fetched == ["room/101/ground-1.jpg"]
     assert client.calls[0]["images"] == ["data:image/jpeg;base64,room/101/ground-1.jpg"]
 
@@ -208,11 +221,11 @@ async def test_skipped_when_model_check_disabled() -> None:
     assert replay.replayed is True and replay.status == STATUS_SKIPPED
 
 
-async def test_skipped_when_rustfs_config_missing() -> None:
-    svc, client, _ = make_service(results=[], rustfs_ok=False)
+async def test_skipped_when_minio_config_missing() -> None:
+    svc, client, _ = make_service(results=[], minio_ok=False)
     result = await svc.judge(make_req())
     assert result.status == STATUS_SKIPPED
-    assert "RustFS" in result.reason
+    assert "MinIO" in result.reason
     assert client.calls == []
 
 
@@ -307,3 +320,123 @@ async def test_vision_switch_independent_on_while_model_check_off() -> None:
     result = await svc.judge(make_req())
     assert result.status == STATUS_JUDGED
     assert client.calls != []
+
+
+# --- Java 直传 URL 形态（C-04 photo_urls） --------------------------------------
+
+
+def make_url_transport(
+    *,
+    status: int = 200,
+    content: bytes = b"\xff\xd8\xff\xe0fake-jpeg",
+    content_type: str | None = "image/jpeg",
+    exc: Exception | None = None,
+) -> httpx.MockTransport:
+    """httpx.MockTransport：模拟 Java 侧文件地址（不触网）。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if exc is not None:
+            raise exc
+        headers = {"content-type": content_type} if content_type else {}
+        return httpx.Response(status, headers=headers, content=content)
+
+    return httpx.MockTransport(handler)
+
+
+async def test_url_mode_fetches_http_and_sends_data_url() -> None:
+    svc, client, fetcher = make_service(
+        results=list(_PASS_CHAIN), url_transport=make_url_transport()
+    )
+    req = make_req(
+        photo_object_keys=(), photo_urls=("http://java.local/files/a.jpg",)
+    )
+    result = await svc.judge(req)
+    assert result.status == STATUS_JUDGED
+    assert result.photo_urls == ("http://java.local/files/a.jpg",)
+    assert result.photo_object_keys == ()
+    assert fetcher.fetched == []  # URL 形态不触 MinIO
+    assert client.calls[0]["images"][0].startswith("data:image/jpeg;base64,")
+
+
+async def test_url_mode_guesses_mime_from_suffix_when_header_missing() -> None:
+    svc, client, _ = make_service(
+        results=list(_PASS_CHAIN),
+        url_transport=make_url_transport(content_type=None, content=b"png-bytes"),
+    )
+    await svc.judge(
+        make_req(photo_object_keys=(), photo_urls=("http://java.local/a.png?sign=1",))
+    )
+    assert client.calls[0]["images"][0].startswith("data:image/png;base64,")
+
+
+async def test_url_mode_http_error_is_technical_failure_not_cached() -> None:
+    svc, client, _ = make_service(
+        results=[], url_transport=make_url_transport(status=404)
+    )
+    req = make_req(photo_object_keys=(), photo_urls=("http://java.local/a.jpg",))
+    with pytest.raises(JudgeTechnicalError, match="HTTP 404"):
+        await svc.judge(req)
+    assert client.calls == []
+    # 技术失败不缓存：同键重试仍重新拉取（而非重放旧结果）
+    with pytest.raises(JudgeTechnicalError, match="HTTP 404"):
+        await svc.judge(req)
+
+
+async def test_url_mode_connect_error_is_technical_failure() -> None:
+    svc, _, _ = make_service(
+        results=[],
+        url_transport=make_url_transport(exc=httpx.ConnectError("connection refused")),
+    )
+    with pytest.raises(JudgeTechnicalError, match="照片 URL 拉取失败"):
+        await svc.judge(
+            make_req(photo_object_keys=(), photo_urls=("http://java.local/a.jpg",))
+        )
+
+
+async def test_url_mode_oversize_content_is_technical_failure() -> None:
+    svc, _, _ = make_service(
+        results=[],
+        url_transport=make_url_transport(content=b"x" * 64),
+        attachment_max_bytes=16,
+    )
+    with pytest.raises(JudgeTechnicalError, match="超过上限"):
+        await svc.judge(
+            make_req(photo_object_keys=(), photo_urls=("http://java.local/a.jpg",))
+        )
+
+
+async def test_url_mode_ignores_missing_minio_config() -> None:
+    """URL 形态不依赖对象存储：MinIO 未配置也应正常判定（不得 SKIPPED）。"""
+    svc, _, _ = make_service(
+        results=list(_PASS_CHAIN), minio_ok=False, url_transport=make_url_transport()
+    )
+    result = await svc.judge(
+        make_req(photo_object_keys=(), photo_urls=("http://java.local/a.jpg",))
+    )
+    assert result.status == STATUS_JUDGED
+
+
+async def test_url_mode_photo_count_over_budget_raises_request_error() -> None:
+    svc, _, _ = make_service(results=[], max_photos=2)
+    with pytest.raises(JudgeRequestError, match="超过模型预算上限"):
+        await svc.judge(
+            make_req(
+                photo_object_keys=(),
+                photo_urls=tuple(f"http://java.local/{i}.jpg" for i in range(3)),
+            )
+        )
+
+
+def test_photo_contract_requires_exactly_one_source() -> None:
+    with pytest.raises(ValueError, match="必须且只能提供一个"):
+        make_req(photo_object_keys=(), photo_urls=())
+    with pytest.raises(ValueError, match="必须且只能提供一个"):
+        make_req(photo_object_keys=("a.jpg",), photo_urls=("http://x/a.jpg",))
+
+
+def test_photo_contract_rejects_over_endpoint_cap() -> None:
+    with pytest.raises(ValueError, match="照片数量必须为 1..8"):
+        make_req(
+            photo_object_keys=(),
+            photo_urls=tuple(f"http://x/{i}.jpg" for i in range(9)),
+        )

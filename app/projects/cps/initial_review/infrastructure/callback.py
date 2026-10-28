@@ -50,19 +50,14 @@ class JavaCallbackClient:
         backoff = self._settings.callback_backoff_seconds
         last_error: str | None = None
         attempts = 0
-        # 跨网络部署：配置了共享密钥则带 Bearer 头（Java 侧 IP 白名单 OR 密钥任一命中即放行）。
-        headers = (
-            {"Authorization": f"Bearer {self._settings.callback_shared_token}"}
-            if self._settings.callback_shared_token
-            else {}
-        )
+        # 无鉴权头（用户要求：只填地址，不再有 token/白名单）。
         async with httpx.AsyncClient(
             timeout=self._settings.callback_timeout_seconds, transport=self._transport
         ) as client:
             for attempt in range(1, max_attempts + 1):
                 attempts = attempt
                 try:
-                    resp = await client.post(url, json=payload, headers=headers)
+                    resp = await client.post(url, json=payload)
                     if 200 <= resp.status_code < 300:
                         return True, attempts, None
                     last_error = f"HTTP {resp.status_code}: {resp.text[:200]}"

@@ -163,12 +163,17 @@ def test_retrieve_forbidden_when_wrong_role():
     assert resp.status_code == 403
 
 
-def test_retrieve_unauthenticated_returns_401():
+def test_retrieve_invalid_token_returns_401():
+    """坏 Bearer → 401（无 token 走内网直连，不再 401）。"""
     raw_app = FastAPI()
     raw_app.include_router(procedural_router)
     raw_app.state.procedural_service = ProceduralMemoryService(
         client=FakeProceduralClient([]), repository=None,
     )
     raw = TestClient(raw_app)
-    resp = raw.post("/procedural/retrieve", json={"categoryL1Id": 1})
+    resp = raw.post(
+        "/procedural/retrieve",
+        json={"categoryL1Id": 1},
+        headers={"Authorization": "Bearer not-a-jwt"},
+    )
     assert resp.status_code == 401

@@ -163,15 +163,29 @@ async def test_post_backfill_without_java_client_reports_error(client: TestClien
 
 
 @pytest.mark.asyncio
-async def test_unauthenticated_request_returns_401():
-    """不通过 dependency_overrides → 走真实 principal → testclient.host 非 trusted → 401。"""
+async def test_unauthenticated_request_passes_auth_then_503():
+    """不通过 dependency_overrides → 走真实 principal：无 token = 内网直连 → 鉴权放行后 503。"""
     raw_app = FastAPI()
     raw_app.include_router(memory_router)
-    # 注：state 没注入，401 应当先于 503
+    # 注：state 没注入 → identity 通过后，服务依赖报 503（不再是 401）
     raw_client = TestClient(raw_app)
     resp = raw_client.post(
         "/memory/ingest/adjudication",
         json={"id": 1, "decision": "APPROVE"},
+    )
+    assert resp.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_invalid_token_request_returns_401():
+    """坏 Bearer → 401（401 只留给无法解析的 token，不静默降级）。"""
+    raw_app = FastAPI()
+    raw_app.include_router(memory_router)
+    raw_client = TestClient(raw_app)
+    resp = raw_client.post(
+        "/memory/ingest/adjudication",
+        json={"id": 1, "decision": "APPROVE"},
+        headers={"Authorization": "Bearer not-a-jwt"},
     )
     assert resp.status_code == 401
 

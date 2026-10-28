@@ -3,7 +3,7 @@
 
 测试金字塔标注：
 - 本文件为**集成级**测试（sqlite 内存库 + fake uploader/pusher + 真实服务编排）；
-- APScheduler 真调度、真实 RustFS 归档、真实推送渠道属**冒烟级**，
+- APScheduler 真调度、真实 MinIO 归档、真实推送渠道属**冒烟级**，
   见 scripts/c3_weekly_report_smoke.py（需真实环境，不进 pytest）。
 
 「调度」环节在测试中以 weekly_report_run 任务的等价遍历模拟
@@ -28,8 +28,8 @@ from app.projects.cps.weekly_report.domain.models import (
     PUSH_STATUS_UNCONFIGURED,
     STATUS_COMPLETED,
 )
-from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
-    RustFSWeeklyReportUploader,
+from app.projects.cps.weekly_report.infrastructure.minio_uploader import (
+    MinIOWeeklyReportUploader,
 )
 
 #: C-05 GET /agent/weekly-reports → 200 外层字段集（冻结基线）
@@ -61,7 +61,7 @@ C05_ITEM_KEYS = {
 
 def _make_uploader(body: bytes = b"<html><body>report</body></html>"):
     """fake uploader：put_bytes 成功 + stream_get 回放同一字节。"""
-    uploader = AsyncMock(spec=RustFSWeeklyReportUploader)
+    uploader = AsyncMock(spec=MinIOWeeklyReportUploader)
     uploader.available = True
     uploader.unavailable_reason = None
     uploader.put_bytes = AsyncMock(return_value=("etag-e2e", len(body)))
@@ -176,9 +176,9 @@ async def test_c08_download_rejects_uncompleted_run(make_service, fixed_now):
     """状态保护：非 COMPLETED（上传失败 FAILED）行不可下载 → 404。"""
     from app.projects.cps.weekly_report.domain.models import STATUS_FAILED
 
-    uploader = AsyncMock(spec=RustFSWeeklyReportUploader)
+    uploader = AsyncMock(spec=MinIOWeeklyReportUploader)
     uploader.available = False  # 触发 FAILED
-    uploader.unavailable_reason = "rustfs down"
+    uploader.unavailable_reason = "minio down"
     svc = make_service(uploader=uploader)
     win = compute_window(now=fixed_now)
     run = await svc.run_once(report_type="cps-issue-inspection", window=win)

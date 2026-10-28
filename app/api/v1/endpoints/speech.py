@@ -8,7 +8,7 @@ base-url=http://127.0.0.1:8000/api/v1，相对路径 /agent/speech-to-text）。
 （契约别名字段 request_id 同样接受）；服务端按 key 重放一致（replayed=true）。
 语义（PRD §20.2 / AC-03 / D-03）：转写文本仅回填表单（原因/短期措施/长期
 措施三字段），不作点检证据；敏感词/长度校验属 A5 初审管线，回写后触发。
-SKIPPED：ASR 未配置/禁用/鉴权拒绝/RustFS 前置缺失 → 明确跳过不伪造，
+SKIPPED：ASR 未配置/禁用/鉴权拒绝/MinIO 前置缺失 → 明确跳过不伪造，
 Java 引导用户手工输入。
 """
 
@@ -23,7 +23,7 @@ from app.api.v1.endpoints.agent_runs import FrameworkRoute, Identity
 from app.projects.cps.initial_review.infrastructure.config import (
     load_initial_review_settings,
 )
-from app.projects.cps.initial_review.infrastructure.model_client import RustFSObjectFetcher
+from app.projects.cps.initial_review.infrastructure.model_client import MinIOObjectFetcher
 from app.projects.cps.speech.application.service import (
     SpeechRequestError,
     SpeechTechnicalError,
@@ -53,7 +53,7 @@ def _service(request: Request) -> SpeechToTextService:
         svc = SpeechToTextService(
             settings=cfg,
             asr_client=OpenAiCompatibleAsrClient(cfg),
-            audio_fetcher=RustFSObjectFetcher(load_initial_review_settings().rustfs),
+            audio_fetcher=MinIOObjectFetcher(load_initial_review_settings().minio),
         )
         request.app.state.speech_to_text_service = svc
     return svc

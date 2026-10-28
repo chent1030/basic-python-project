@@ -4,7 +4,7 @@
 1. 拿 PG advisory lock（同实例串行；多实例防双触发）；
 2. 检查同 (type, window) 是否已 COMPLETED（已成功不入新 run）；
 3. 否则 INSERT 新 run（PENDING）→ mark_running；
-4. DataFetcher.fetch → Skill.render → RustFSWeeklyReportUploader.put_bytes
+4. DataFetcher.fetch → Skill.render → MinIOWeeklyReportUploader.put_bytes
 5. mark_archiving → mark_completed
 6. Pusher.send → record_push（独立列，与 status 解耦）
 
@@ -33,6 +33,9 @@ from app.projects.cps.weekly_report.domain.models import (
     ReportWindow,
 )
 from app.projects.cps.weekly_report.infrastructure.config import WeeklyReportSettings
+from app.projects.cps.weekly_report.infrastructure.minio_uploader import (
+    MinIOWeeklyReportUploader,
+)
 from app.projects.cps.weekly_report.infrastructure.pusher import (
     WeeklyReportPusher,
     default_pusher,
@@ -40,9 +43,6 @@ from app.projects.cps.weekly_report.infrastructure.pusher import (
 from app.projects.cps.weekly_report.infrastructure.repository import (
     WeeklyReportRepository,
     new_run_id,
-)
-from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
-    RustFSWeeklyReportUploader,
 )
 from app.skills.weekly_report.skill import (
     RenderedReport,
@@ -94,7 +94,7 @@ class WeeklyReportService:
         session_factory: Callable,
         data_fetcher: WeeklyReportDataFetcher,
         skill: WeeklyReportSkill | None = None,
-        uploader: RustFSWeeklyReportUploader | None = None,
+        uploader: MinIOWeeklyReportUploader | None = None,
         pusher: WeeklyReportPusher | None = None,
         settings: WeeklyReportSettings,
         repository: WeeklyReportRepository | None = None,
@@ -103,8 +103,8 @@ class WeeklyReportService:
         self._session_factory = session_factory
         self._data_fetcher = data_fetcher
         self._skill = skill or build_default_skill()
-        self._uploader = uploader or RustFSWeeklyReportUploader(
-            settings.rustfs
+        self._uploader = uploader or MinIOWeeklyReportUploader(
+            settings.minio
         )
         self._pusher = pusher or default_pusher()
         self._settings = settings
@@ -120,7 +120,7 @@ class WeeklyReportService:
         return self._skill
 
     @property
-    def uploader(self) -> RustFSWeeklyReportUploader:
+    def uploader(self) -> MinIOWeeklyReportUploader:
         return self._uploader
 
     @property

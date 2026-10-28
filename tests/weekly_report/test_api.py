@@ -54,11 +54,11 @@ def _build_app(svc: WeeklyReportService) -> tuple[FastAPI, TestClient]:
 async def test_list_endpoint_returns_items_with_unavailable_reason(
     make_service, fixed_now
 ):
-    from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
-        RustFSWeeklyReportUploader,
+    from app.projects.cps.weekly_report.infrastructure.minio_uploader import (
+        MinIOWeeklyReportUploader,
     )
 
-    fake_uploader = AsyncMock(spec=RustFSWeeklyReportUploader)
+    fake_uploader = AsyncMock(spec=MinIOWeeklyReportUploader)
     fake_uploader.available = True
     fake_uploader.unavailable_reason = None
     fake_uploader.put_bytes = AsyncMock(return_value=("etag", 1024))
@@ -93,11 +93,11 @@ async def test_download_endpoint_returns_404_when_not_completed(
 async def test_download_endpoint_returns_streamed_html_when_completed(
     make_service, fixed_now
 ):
-    from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
-        RustFSWeeklyReportUploader,
+    from app.projects.cps.weekly_report.infrastructure.minio_uploader import (
+        MinIOWeeklyReportUploader,
     )
 
-    fake_uploader = AsyncMock(spec=RustFSWeeklyReportUploader)
+    fake_uploader = AsyncMock(spec=MinIOWeeklyReportUploader)
     fake_uploader.available = True
     fake_uploader.unavailable_reason = None
     fake_uploader.put_bytes = AsyncMock(return_value=("e", 100))
@@ -125,11 +125,11 @@ async def test_download_endpoint_returns_streamed_html_when_completed(
 async def test_list_endpoint_filters_by_report_type(
     make_service, fixed_now
 ):
-    from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
-        RustFSWeeklyReportUploader,
+    from app.projects.cps.weekly_report.infrastructure.minio_uploader import (
+        MinIOWeeklyReportUploader,
     )
 
-    fake_uploader = AsyncMock(spec=RustFSWeeklyReportUploader)
+    fake_uploader = AsyncMock(spec=MinIOWeeklyReportUploader)
     fake_uploader.available = True
     fake_uploader.unavailable_reason = None
     fake_uploader.put_bytes = AsyncMock(return_value=("e", 100))

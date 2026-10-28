@@ -4,8 +4,8 @@
 - ``qwen3-asr-flash``：OpenAI 兼容同步转写，音频 ≤10MB / ≤5min，
   响应 ``choices[0].message.content`` 即转写文本 —— 本实现默认；
 - paraformer-v2 / qwen3-asr-flash-filetrans：异步任务 + 公网 URL，
-  不适配「同步端点 + 内网 RustFS 取流」场景，不采用；
-- 零新增依赖：httpx + stdlib base64（与 RustFS 取流同栈）。
+  不适配「同步端点 + 内网 MinIO 取流」场景，不采用；
+- 零新增依赖：httpx + stdlib base64（与 MinIO 取流同栈）。
 
 请求最小参数集（兼容 NewAPI 网关转发）：model + messages；
 ``language`` 配置非空时才附 ``asr_options.language``。

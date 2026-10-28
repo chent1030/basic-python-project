@@ -33,8 +33,8 @@ from app.projects.cps.weekly_report.infrastructure.pusher import NoOpPusher
 from app.projects.cps.weekly_report.infrastructure.repository import (
     WeeklyReportRepository,
 )
-from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
-    RustFSWeeklyReportUploader,
+from app.projects.cps.weekly_report.infrastructure.minio_uploader import (
+    MinIOWeeklyReportUploader,
 )
 from app.skills.weekly_report.skill import build_default_skill
 
@@ -58,7 +58,7 @@ def _build_service() -> WeeklyReportService:
         session_factory=session_factory,
         data_fetcher=StubDataFetcher(),
         skill=build_default_skill(),
-        uploader=RustFSWeeklyReportUploader(settings.rustfs),
+        uploader=MinIOWeeklyReportUploader(settings.minio),
         pusher=NoOpPusher(),
         settings=settings,
         repository=WeeklyReportRepository(),
@@ -76,7 +76,7 @@ async def _run(report_type: str) -> None:
     )
     if not svc.uploader.available:
         log.warning(
-            "[smoke] RustFS 不可用（%s）— 仍可验证 service.run_once 的状态机，"
+            "[smoke] MinIO 不可用（%s）— 仍可验证 service.run_once 的状态机，"
             "但 archive_object_key 不会落库。",
             svc.uploader.unavailable_reason,
         )
@@ -111,7 +111,7 @@ async def _run(report_type: str) -> None:
         log.info("[smoke] ✅ 全部断言通过")
     else:
         log.info(
-            "[smoke] ⚠️ status=FAILED（RustFS 不可达时正常），其余字段已落库"
+            "[smoke] ⚠️ status=FAILED（MinIO 不可达时正常），其余字段已落库"
         )
 
 

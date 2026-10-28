@@ -1,8 +1,9 @@
 """B6 辅房点检判定应用服务（契约 C-04，同步 API）。
 
 判定链（PRD §24.1 照片-only，两阶段）：
-1. 取图：object_key → RustFS S3 GET → data URL（复用 initial_review 基建；
-   配置缺失 → SKIPPED 不伪造）；
+1. 取图：object_key → MinIO S3 GET，或 URL → HTTP(S) GET，统一转 data URL
+   （复用 initial_review 基建；MinIO 配置缺失且走 object_key 时 → SKIPPED
+   不伪造）；
 2. 阶段①类型匹配：视觉模型校验照片主体是否为点检项要求的类型；
    不符 → TYPE_MISMATCH（须重拍，不进入合格判断，AC-08）；
 3. 阶段②内容判定：按点检内容判断 PASS/FAIL + 理由 + 证据；
@@ -15,7 +16,7 @@
 幂等：进程内 LRU+TTL 缓存（与 C-07 同款），键=``room-judge-{submissionId}-
 {itemId}-{attempt}``；技术失败不缓存（Java 可同键重试）。
 模型配置沿用 ``cps_agent.initial_review.model_check``（qwen vision 模型参数）与
-``.rustfs``（env CPS_STORAGE_* 优先）；**判定开关**波次 7 起独立为
+``.minio``（env CPS_STORAGE_* 优先）；**判定开关**波次 7 起独立为
 ``cps_agent.room_checks.vision.enabled``（未配 → 回退旧开关
 model_check.enabled，全未配 → SKIPPED），见 infrastructure/config.py。
 """
@@ -23,6 +24,7 @@ model_check.enabled，全未配 → SKIPPED），见 infrastructure/config.py。
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import threading
 import time
@@ -30,14 +32,17 @@ from collections import OrderedDict
 from dataclasses import dataclass, replace
 from typing import Any, Protocol, runtime_checkable
 
+import httpx
+
 from app.projects.cps.initial_review.infrastructure.config import (
     InitialReviewSettings,
     load_initial_review_settings,
 )
 from app.projects.cps.initial_review.infrastructure.model_client import (
+    MIME_BY_SUFFIX,
+    MinIOObjectFetcher,
     ModelCallError,
     ModelUnavailableError,
-    RustFSObjectFetcher,
 )
 from app.projects.cps.room_checks.domain.models import (
     STAGE_CONTENT_JUDGE,
@@ -90,9 +95,15 @@ class VisionModelClient(Protocol):
 
 @runtime_checkable
 class PhotoFetcher(Protocol):
-    """object_key → data URL（RustFSObjectFetcher 满足）。"""
+    """object_key → data URL（MinIOObjectFetcher 满足）；URL 形态走内建 HTTP。"""
 
     async def fetch_data_url(self, object_key: str) -> str: ...
+
+
+def _url_suffix(url: str) -> str:
+    """URL 路径后缀（去 query/片段，小写，含点）；无后缀返回空串。"""
+    path = url.split("?", 1)[0].split("#", 1)[0].rsplit("/", 1)[-1]
+    return ("." + path.rsplit(".", 1)[-1].lower()) if "." in path else ""
 
 
 def derive_idempotency_key(submission_id: str, item_id: str, attempt: int) -> str:
@@ -161,6 +172,7 @@ class RoomCheckJudgeService:
         fetcher: PhotoFetcher | None = None,
         settings: InitialReviewSettings | None = None,
         vision_enabled: bool | None = None,
+        url_transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._settings = settings or load_initial_review_settings()
         if vision_enabled is not None:
@@ -171,6 +183,7 @@ class RoomCheckJudgeService:
             self._vision_enabled, self._vision_source = resolve_vision_enabled()
         self._model_client = model_client
         self._fetcher = fetcher
+        self._url_transport = url_transport
         self._cache = _ResultCache()
 
     @property
@@ -195,7 +208,7 @@ class RoomCheckJudgeService:
 
     def _photo_fetcher(self) -> PhotoFetcher:
         if self._fetcher is None:
-            self._fetcher = RustFSObjectFetcher(self._settings.rustfs)
+            self._fetcher = MinIOObjectFetcher(self._settings.minio)
         return self._fetcher
 
     # -- 主入口 --------------------------------------------------------------
@@ -204,9 +217,9 @@ class RoomCheckJudgeService:
         if cached is not None:
             return replace(cached, replayed=True)
 
-        if len(req.photo_object_keys) > self.max_photos:
+        if len(req.photo_refs) > self.max_photos:
             raise JudgeRequestError(
-                f"照片数量 {len(req.photo_object_keys)} 超过模型预算上限 "
+                f"照片数量 {len(req.photo_refs)} 超过模型预算上限 "
                 f"{self.max_photos}（max_images_per_side）"
             )
 
@@ -215,9 +228,11 @@ class RoomCheckJudgeService:
             return self._finish_skipped(
                 req, f"模型检查已显式禁用（{self._vision_source}）"
             )
-        rustfs_reason = self._settings.rustfs.unavailable_reason
-        if rustfs_reason:
-            return self._finish_skipped(req, f"照片无法获取：{rustfs_reason}")
+        # URL 形态不依赖对象存储：仅 object_key 形态才受 MinIO 配置约束
+        if not req.photo_urls:
+            minio_reason = self._settings.minio.unavailable_reason
+            if minio_reason:
+                return self._finish_skipped(req, f"照片无法获取：{minio_reason}")
 
         try:
             outcome = await self._run_chain(req)
@@ -233,6 +248,7 @@ class RoomCheckJudgeService:
             reason=outcome.reason,
             evidence=outcome.evidence,
             photo_object_keys=req.photo_object_keys,
+            photo_urls=req.photo_urls,
             item_snapshot={
                 "content": req.item_content,
                 "type": req.item_type,
@@ -340,14 +356,49 @@ class RoomCheckJudgeService:
         )
 
     async def _load_photos(self, req: JudgeRequest) -> list[str]:
-        """object_key → data URL（配置缺失抛 ModelUnavailableError → SKIPPED）。"""
+        """照片引用 → data URL。
+
+        - photo_urls：Java 直传地址 → HTTP(S) GET（技术失败 → JudgeTechnicalError
+          → 端点 502，不缓存，与 MinIO 网络故障同语义）；
+        - photo_object_keys：MinIO GET（配置缺失抛 ModelUnavailableError → SKIPPED）。
+        """
+        if req.photo_urls:
+            return [await self._fetch_photo_url(url) for url in req.photo_urls]
         fetcher = self._photo_fetcher()
         try:
             return [await fetcher.fetch_data_url(key) for key in req.photo_object_keys]
         except ModelUnavailableError as exc:
             raise _SkipSignal(str(exc)) from exc
-        except Exception as exc:  # noqa: BLE001 - RustFS 网络/签名故障统一技术失败
+        except Exception as exc:  # noqa: BLE001 - MinIO 网络/签名故障统一技术失败
             raise JudgeTechnicalError(f"照片获取失败：{type(exc).__name__}: {exc}") from exc
+
+    async def _fetch_photo_url(self, url: str) -> str:
+        """HTTP(S) GET → data URL（超时/连接失败/非 200/空/超大 → 技术失败 502）。"""
+        budget = float(self._settings.model_check.attachment_timeout_seconds)
+        cap = int(self._settings.model_check.attachment_max_bytes)
+        try:
+            async with httpx.AsyncClient(
+                transport=self._url_transport,
+                follow_redirects=True,
+                timeout=budget,
+            ) as client:
+                resp = await client.get(url)
+        except httpx.TransportError as exc:
+            raise JudgeTechnicalError(
+                f"照片 URL 拉取失败 {url}：{type(exc).__name__}: {exc}"
+            ) from exc
+        if resp.status_code != 200:
+            raise JudgeTechnicalError(f"照片 URL {url} 返回 HTTP {resp.status_code}")
+        if not resp.content:
+            raise JudgeTechnicalError(f"照片 URL {url} 返回空响应")
+        if len(resp.content) > cap:
+            raise JudgeTechnicalError(
+                f"照片 URL {url} 体积 {len(resp.content)} 字节超过上限 {cap}"
+            )
+        mime = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+        if not mime.startswith("image/"):
+            mime = MIME_BY_SUFFIX.get(_url_suffix(url), "image/jpeg")
+        return "data:" + mime + ";base64," + base64.b64encode(resp.content).decode("ascii")
 
     def _skipped_outcome(
         self, reason: str, *, type_trace: dict[str, Any] | None = None
@@ -380,6 +431,7 @@ class RoomCheckJudgeService:
             reason=outcome.reason,
             evidence="",
             photo_object_keys=req.photo_object_keys,
+            photo_urls=req.photo_urls,
             item_snapshot={
                 "content": req.item_content,
                 "type": req.item_type,

@@ -1,9 +1,9 @@
-"""周报归档上传（RustFS S3 SigV4 PUT；零新增依赖）。
+"""周报归档上传（MinIO S3 SigV4 PUT；零新增依赖）。
 
 复用 A7 / initial_review 同套 SigV4 签名算法（httpx + stdlib hmac/sha256），
 本模块为周报归档提供：
 - :func:`put_bytes`：上传对象 + 返回 (etag, size)；
-- :func:`stream_get`：从 RustFS 流式 GET（C-08 受控下载用）。
+- :func:`stream_get`：从 MinIO 流式 GET（C-08 受控下载用）。
 
 设计 §4 路径 ``weekly-reports/{type}/{yyyy-Ww}/{run_no}.html`` 天然版本化：
 重跑不覆盖（run_no 自增）。
@@ -19,18 +19,18 @@ from datetime import UTC, datetime
 import httpx
 
 from app.projects.cps.weekly_report.infrastructure.config import (
-    WeeklyReportRustFSSettings,
+    WeeklyReportMinIOSettings,
 )
 
 logger = logging.getLogger(__name__)
 
 
-class RustFSUnavailableError(Exception):
-    """RustFS 配置不完整 / 不可达（不伪造「已归档」语义）。"""
+class MinIOUnavailableError(Exception):
+    """MinIO 配置不完整 / 不可达（不伪造「已归档」语义）。"""
 
 
-class RustFSPutError(Exception):
-    """RustFS PUT 失败（HTTP 非 2xx / 鉴权失败 / 网络异常）。"""
+class MinIOPutError(Exception):
+    """MinIO PUT 失败（HTTP 非 2xx / 鉴权失败 / 网络异常）。"""
 
 
 def _sign_key(secret: str, date: str, region: str, service: str) -> bytes:
@@ -42,7 +42,7 @@ def _sign_key(secret: str, date: str, region: str, service: str) -> bytes:
 
 
 def _put_headers(
-    cfg: WeeklyReportRustFSSettings,
+    cfg: WeeklyReportMinIOSettings,
     *,
     url: httpx.URL,
     body_sha256: str,
@@ -94,12 +94,12 @@ def _put_headers(
     }
 
 
-class RustFSWeeklyReportUploader:
-    """周报归档 RustFS PUT + 受控 GET。"""
+class MinIOWeeklyReportUploader:
+    """周报归档 MinIO PUT + 受控 GET。"""
 
     def __init__(
         self,
-        cfg: WeeklyReportRustFSSettings,
+        cfg: WeeklyReportMinIOSettings,
         *,
         region: str = "us-east-1",
         transport: httpx.AsyncBaseTransport | None = None,
@@ -123,10 +123,10 @@ class RustFSWeeklyReportUploader:
         body: bytes,
         content_type: str = "text/html; charset=utf-8",
     ) -> tuple[str | None, int]:
-        """PUT 字节；返回 ``(etag, size)``。失败抛 RustFSPutError 或
-        RustFSUnavailableError（不可用语义 — 调用方应当转为 FAILED）。"""
+        """PUT 字节；返回 ``(etag, size)``。失败抛 MinIOPutError 或
+        MinIOUnavailableError（不可用语义 — 调用方应当转为 FAILED）。"""
         if not self.available:
-            raise RustFSUnavailableError(self._cfg.unavailable_reason or "")
+            raise MinIOUnavailableError(self._cfg.unavailable_reason or "")
         parsed = httpx.URL(self._cfg.endpoint)
         path = f"/{self._cfg.bucket}/{object_key.lstrip('/')}"
         url = parsed.copy_with(path=path)
@@ -143,8 +143,8 @@ class RustFSWeeklyReportUploader:
                 str(url), content=body, headers=headers, timeout=30.0
             )
         if resp.status_code not in (200, 201):
-            raise RustFSPutError(
-                f"RustFS PUT {object_key} → HTTP {resp.status_code}: {resp.text[:200]}"
+            raise MinIOPutError(
+                f"MinIO PUT {object_key} → HTTP {resp.status_code}: {resp.text[:200]}"
             )
         # ETag 通常在响应头；也可能没有（如 chunked 编码）
         etag = resp.headers.get("ETag") or resp.headers.get("etag")
@@ -157,7 +157,7 @@ class RustFSWeeklyReportUploader:
     ) -> AsyncIterator[bytes]:
         """流式 GET（C-08 受控下载用，按 chunk 产出字节）。"""
         if not self.available:
-            raise RustFSUnavailableError(self._cfg.unavailable_reason or "")
+            raise MinIOUnavailableError(self._cfg.unavailable_reason or "")
         parsed = httpx.URL(self._cfg.endpoint)
         path = f"/{self._cfg.bucket}/{object_key.lstrip('/')}"
         url = parsed.copy_with(path=path)
@@ -202,8 +202,8 @@ class RustFSWeeklyReportUploader:
             ) as resp:
                 if resp.status_code != 200:
                     text = await resp.aread()
-                    raise RustFSPutError(
-                        f"RustFS GET {object_key} → HTTP {resp.status_code}: "
+                    raise MinIOPutError(
+                        f"MinIO GET {object_key} → HTTP {resp.status_code}: "
                         f"{text[:200]!r}"
                     )
                 async for chunk in resp.aiter_bytes(chunk_size=64 * 1024):
@@ -211,7 +211,7 @@ class RustFSWeeklyReportUploader:
 
 
 __all__ = [
-    "RustFSPutError",
-    "RustFSUnavailableError",
-    "RustFSWeeklyReportUploader",
+    "MinIOPutError",
+    "MinIOUnavailableError",
+    "MinIOWeeklyReportUploader",
 ]
