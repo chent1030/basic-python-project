@@ -16,9 +16,9 @@ import pytest
 
 from app.projects.cps.initial_review.application.check_pipeline import CheckPipeline
 from app.projects.cps.initial_review.infrastructure.model_client import (
-    ModelCallError,
     MinIOObjectFetcher,
     MinIOSettings,
+    ModelCallError,
 )
 
 from .conftest import (

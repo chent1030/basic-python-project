@@ -19,12 +19,12 @@ from app.projects.cps.weekly_report.infrastructure.config import (
     WeeklyReportMinIOSettings,
     WeeklyReportSettings,
 )
+from app.projects.cps.weekly_report.infrastructure.minio_uploader import (
+    MinIOWeeklyReportUploader,
+)
 from app.projects.cps.weekly_report.infrastructure.pusher import NoOpPusher
 from app.projects.cps.weekly_report.infrastructure.repository import (
     WeeklyReportRepository,
-)
-from app.projects.cps.weekly_report.infrastructure.minio_uploader import (
-    MinIOWeeklyReportUploader,
 )
 from app.skills.weekly_report.skill import build_default_skill
 

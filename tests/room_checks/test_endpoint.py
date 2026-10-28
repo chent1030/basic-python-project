@@ -186,7 +186,7 @@ def test_endpoint_422_when_both_photo_forms_given() -> None:
         _payload(photo_urls=["http://java.local/files/room-101.jpg"]),
     )
     assert resp.status_code == 422
-    assert "必须且只能提供一个" in resp.text
+    assert "只能出现一种" in resp.text
 
 
 def test_endpoint_422_when_no_photo_form_given() -> None:

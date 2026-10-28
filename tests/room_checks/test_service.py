@@ -14,8 +14,8 @@ import pytest
 
 from app.projects.cps.initial_review.infrastructure.config import (
     InitialReviewSettings,
-    ModelCheckSettings,
     MinIOSettings,
+    ModelCheckSettings,
 )
 from app.projects.cps.initial_review.infrastructure.model_client import (
     FakeModelCheckClient,
@@ -427,10 +427,10 @@ async def test_url_mode_photo_count_over_budget_raises_request_error() -> None:
         )
 
 
-def test_photo_contract_requires_exactly_one_source() -> None:
-    with pytest.raises(ValueError, match="必须且只能提供一个"):
+def test_photo_contract_requires_at_least_one_source() -> None:
+    with pytest.raises(ValueError, match="至少提供一张照片"):
         make_req(photo_object_keys=(), photo_urls=())
-    with pytest.raises(ValueError, match="必须且只能提供一个"):
+    with pytest.raises(ValueError, match="只能出现一种"):
         make_req(photo_object_keys=("a.jpg",), photo_urls=("http://x/a.jpg",))
 
 

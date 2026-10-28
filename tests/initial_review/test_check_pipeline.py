@@ -24,8 +24,8 @@ from app.projects.cps.initial_review.domain.models import AttachmentRef
 from app.projects.cps.initial_review.domain.text_validity import FieldValidity
 from app.projects.cps.initial_review.domain.verdicts import aggregate_overall
 from app.projects.cps.initial_review.infrastructure.model_client import (
-    ModelCallError,
     MinIOObjectFetcher,
+    ModelCallError,
     extract_json_object,
 )
 from tests.initial_review.conftest import (

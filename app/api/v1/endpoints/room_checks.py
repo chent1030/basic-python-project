@@ -92,8 +92,8 @@ def _coerce_photo_list(value: Any, field_name: str, *, max_len: int) -> list[str
 def _coerce_photos(payload: dict[str, Any]) -> tuple[list[str], list[str]]:
     """C-04 照片引用：photo_object_keys 或 photo_urls 恰有一个非空，总数 1..上限。
 
-    允许 Java 直接传 URL（Python 侧 GET 拉取），也保留 object_key 形态；
-    同时给两种或都不给 → 422。
+    Java 传 MinIO 绝对 URL（Python 侧 GET 拉取）；object_key 形态只为兼容存量数据，
+    两种同时出现或一张都没有 → 422。
     """
     raw_keys = payload.get("photo_object_keys")
     raw_urls = payload.get("photo_urls")
@@ -105,10 +105,15 @@ def _coerce_photos(payload: dict[str, Any]) -> tuple[list[str], list[str]]:
     urls = (
         _coerce_photo_list(raw_urls, "photo_urls", max_len=2048) if raw_urls else []
     )
-    if bool(keys) == bool(urls):
+    if keys and urls:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="photo_object_keys 与 photo_urls 必须且只能提供一个",
+            detail="photo_object_keys 与 photo_urls 只能出现一种",
+        )
+    if not keys and not urls:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="photo_urls 至少提供一张照片",
         )
     if len(keys) + len(urls) > ENDPOINT_MAX_PHOTOS:
         raise HTTPException(

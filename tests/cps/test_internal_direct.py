@@ -27,7 +27,13 @@ from app.projects.cps.infrastructure.config import CPSConfig
 
 def _make_request(client_host: str = "203.0.113.9") -> Request:
     return Request(
-        {"type": "http", "client": (client_host, 51234), "headers": [], "method": "GET", "path": "/"}
+        {
+            "type": "http",
+            "client": (client_host, 51234),
+            "headers": [],
+            "method": "GET",
+            "path": "/",
+        }
     )
 
 

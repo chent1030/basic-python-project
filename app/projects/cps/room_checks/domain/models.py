@@ -85,19 +85,19 @@ class JudgeRequest:
     attempt: int  # ≥1；同一 item 重拍/补拍后递增
     item_content: str  # 点检内容（如"地面无杂物、无积水"）
     item_type: str  # 点检类型=照片应含对象类别（如"地面"；≠辅房类型）
-    photo_object_keys: tuple[str, ...]  # MinIO object keys（与 photo_urls 二选一，1..max）
-    photo_urls: tuple[str, ...] = ()  # 直传 HTTP(S) URL（与 photo_object_keys 二选一）
+    photo_object_keys: tuple[str, ...] = ()  # 仅兼容存量：MinIO 对象键（新数据不传）
+    photo_urls: tuple[str, ...] = ()  # MinIO 绝对 URL（Python 直接 GET）
     deduction: float | None = None  # 扣分值（透传留痕，判定不用）
     config_version: str | None = None  # 点检项配置版本（留痕）
     room_name: str | None = None  # 辅房名称（prompt 上下文，可选）
 
     def __post_init__(self) -> None:
-        """C-04 照片契约：object_keys / urls 恰有一个非空，总数 1..端点上限。"""
-        if bool(self.photo_object_keys) == bool(self.photo_urls):
-            raise ValueError(
-                "photo_object_keys 与 photo_urls 必须且只能提供一个"
-            )
+        """C-04 照片契约：至少一张、只用一种形态（URL 或存量对象键），总数 1..端点上限。"""
+        if self.photo_object_keys and self.photo_urls:
+            raise ValueError("photo_object_keys 与 photo_urls 只能出现一种")
         total = len(self.photo_object_keys) + len(self.photo_urls)
+        if total == 0:
+            raise ValueError("photo_urls 至少提供一张照片")
         if not 1 <= total <= ENDPOINT_MAX_PHOTOS:
             raise ValueError(
                 f"照片数量必须为 1..{ENDPOINT_MAX_PHOTOS}，实际 {total}"
