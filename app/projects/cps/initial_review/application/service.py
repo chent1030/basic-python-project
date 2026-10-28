@@ -81,8 +81,7 @@ class CallbackPushBudgetExhausted(Exception):
 
 
 #: 检查执行器：(执行行, 原始请求|None) → (text_checks, model_checks, overall)。
-#  request 仅为首次执行可得（base64 附件原文在内存）；进程崩溃/重放路径 request=None，
-#  base64 附件届时如实记 SKIPPED/DEGRADED（object_key 模式可从快照重放）。
+#  附件引用只有 URL 一种形态，从快照即可重放（request 仅作上下文透传）。
 CheckRunner = Callable[
     [AgentInitialReviewExec, "RectificationReviewRequest | None"],
     Awaitable[tuple[dict, dict, str]],
@@ -101,7 +100,6 @@ class InitialReviewService:
         check_runner: CheckRunner | None = None,
         callback_dispatcher: CallbackDispatcher | None = None,
         model_client: Any | None = None,
-        minio_fetcher: Any | None = None,
         history_loader: Any | None = None,
         memory_retriever: Any | None = None,
     ) -> None:
@@ -115,7 +113,6 @@ class InitialReviewService:
         self._pipeline = CheckPipeline(
             settings,
             model_client=model_client,
-            minio=minio_fetcher,
             history_loader=history_loader,
         )
         # 波次 9 · FR-09 长期记忆：AI 初审前调用 MemoryRetrievalService 检索历史同类

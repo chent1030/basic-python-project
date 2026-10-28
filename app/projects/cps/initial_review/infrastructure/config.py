@@ -27,7 +27,7 @@ ENV_MODEL_CHECK_ENABLED = "CPS_INITIAL_REVIEW_MODEL_CHECK_ENABLED"
 
 @dataclass(frozen=True)
 class MinIOSettings:
-    """object_key 附件读取（S3 SigV4 GET，零新增依赖：httpx + stdlib）。"""
+    """MinIO 连接配置（S3 SigV4 GET；仅 speech/weekly_report 的 object_key 取流）。"""
 
     endpoint: str
     access_key: str

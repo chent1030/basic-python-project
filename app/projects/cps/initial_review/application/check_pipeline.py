@@ -5,10 +5,8 @@
   历史比对无历史 → SKIPPED+原因，不伪造）；
 - A8 三字段循环：逐字段调用文本模型，单次预算 ``field_budget_seconds``
   （``asyncio.timeout``，可配，默认 90s）；空字段（规则层已 FAIL）不浪费调用；
-- A7 附件三形态：url → HTTP(S) GET（Java 直接传 URL）；object_key → MinIO
-  （S3 GET）；content_base64 → 内存原文（仅首次执行可得；重放执行拿不到原文
-  → 如实 SKIPPED，不伪造）；三者取一，统一转 data URL 送视觉模型；
-  读数核对并入同一次视觉调用；
+- A7 附件只有 URL 一种形态：url → HTTP(S) GET → data URL 送视觉模型
+  （取不到图 → 如实 DEGRADED/SKIPPED，不伪造）；读数核对并入同一次视觉调用；
 - 模型不可用（ModelUnavailableError：未配置/禁用/客户端未装配）→ SKIPPED+原因；
   技术失败（ModelCallError/超时/输出两次无效）→ DEGRADED（不冒充内容结论）。
 
@@ -105,13 +103,11 @@ class CheckPipeline:
         settings: InitialReviewSettings,
         *,
         model_client: Any | None = None,
-        minio: Any | None = None,
         history_loader: HistoryLoader | None = None,
         url_transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._settings = settings
         self._model = model_client
-        self._minio = minio
         self._history_loader = history_loader
         #: 测试注入 httpx.MockTransport（url 形态附件拉取）
         self._url_transport = url_transport
@@ -141,7 +137,7 @@ class CheckPipeline:
         )
         text_validity = await self._text_validity(texts, issue_context, historical_hints_json)
         image_compare = await self._image_compare(
-            snapshot, request, issue_context, historical_hints_json
+            snapshot, issue_context, historical_hints_json
         )
         return {
             "measure_similarity": similarity,
@@ -254,7 +250,6 @@ class CheckPipeline:
     async def _image_compare(
         self,
         snapshot: dict[str, Any],
-        request: Any | None,
         issue_context: str,
         historical_hints: str | None = None,
     ) -> dict[str, Any]:
@@ -285,12 +280,8 @@ class CheckPipeline:
         before, after = before[:cap], after[:cap]
 
         try:
-            before_urls, before_refs = await self._resolve_side(
-                before, getattr(request, "before_attachments", None)
-            )
-            after_urls, after_refs = await self._resolve_side(
-                after, getattr(request, "after_attachments", None)
-            )
+            before_urls, before_refs = await self._resolve_side(before)
+            after_urls, after_refs = await self._resolve_side(after)
         except ModelUnavailableError as exc:
             base["reason"] = f"附件不可用，未出具结论：{exc}"
             return base
@@ -348,7 +339,7 @@ class CheckPipeline:
         """HTTP(S) GET 附件 URL → data URL（送视觉模型的统一形态）。
 
         技术失败（连接/超时/非 200/空响应/超体积）一律 ``ModelCallError``
-        → 管线记 DEGRADED 且不伪造图片内容（与 object_key 路径同一语义）。
+        → 管线记 DEGRADED 且不伪造图片内容。
         """
         model_check = self._settings.model_check
         budget = model_check.attachment_timeout_seconds
@@ -379,45 +370,22 @@ class CheckPipeline:
         return "data:" + mime + ";base64," + base64.b64encode(resp.content).decode("ascii")
 
     async def _resolve_side(
-        self, metas: list[dict[str, Any]], request_attachments: Any | None
+        self, metas: list[dict[str, Any]]
     ) -> tuple[list[str], list[str]]:
         """一侧附件元数据 → (data_urls, evidence_refs)。
 
-        - url → HTTP(S) GET（失败/超时/非 200 → ModelCallError → DEGRADED）；
-        - object_key → MinIO 拉取（配置缺失 → ModelUnavailableError → SKIPPED）；
-        - content_base64 → 仅内存原文可得（首次执行）；重放执行拿不到 → 技术失败 DEGRADED。
+        只有 url 一种形态：每次执行按 URL 重新拉取（重放语义天然成立）；
+        失败/超时/非 200 → ModelCallError → DEGRADED。没有 url 的条目跳过
+        （不报错，取不到图就不判）。
         """
-        originals = list(request_attachments) if request_attachments is not None else []
         urls: list[str] = []
         refs: list[str] = []
-        for idx, meta in enumerate(metas):
-            if meta.get("url"):
-                # Java 可直接传 URL：每次执行按 URL 重新拉取（重放语义天然成立）。
-                link = meta["url"]
-                urls.append(await self._fetch_url_data_url(link))
-                refs.append(link)
+        for meta in metas:
+            link = meta.get("url")
+            if not link:
                 continue
-            if meta.get("object_key"):
-                key = meta["object_key"]
-                assert self._minio is not None  # object_key 模式必配 fetcher（装配层契约）
-                urls.append(await self._minio.fetch_data_url(key))
-                refs.append(key)
-                continue
-            digest = meta.get("content_base64_sha256")
-            original = originals[idx] if idx < len(originals) else None
-            content = getattr(original, "content_base64", None)
-            if not content:
-                raise ModelCallError(
-                    f"base64 附件原文不可得（sha256={str(digest)[:12]}…，"
-                    "重放执行无原文）：该照片无法送检"
-                )
-            file_name = meta.get("file_name") or getattr(original, "file_name", None) or ""
-            suffix = ("." + file_name.rsplit(".", 1)[-1].lower()) if "." in file_name else ""
-            mime = MIME_BY_SUFFIX.get(suffix, "application/octet-stream")
-            urls.append(f"data:{mime};base64,{content}")
-            refs.append(
-                meta.get("attachment_id") or f"base64:{str(digest)[:16]}"
-            )
+            urls.append(await self._fetch_url_data_url(link))
+            refs.append(link)
         return urls, refs
 
     @staticmethod

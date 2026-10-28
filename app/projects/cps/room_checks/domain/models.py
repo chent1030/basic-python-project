@@ -37,10 +37,6 @@ VERDICT_FAIL = "FAIL"
 STAGE_TYPE_MATCH = "type_match"
 STAGE_CONTENT_JUDGE = "content_judge"
 
-#: 端点层照片数量硬上限（防滥用；模型预算上限由配置另约束）
-ENDPOINT_MAX_PHOTOS = 8
-
-
 # --- 视觉模型结构化输出 schema（DashScopeModelClient.complete_vision_json） ---
 class TypeMatchSchema(BaseModel):
     """第一阶段：类型匹配校验输出。"""
@@ -70,10 +66,8 @@ class ContentJudgeSchema(BaseModel):
 class JudgeRequest:
     """C-04 入参（点检项定义 + 照片引用）。
 
-    照片引用两种形态二选一（Java 直传，契约 §C-04）：
-    - ``photo_object_keys``：MinIO 对象键（Python 侧用 S3 客户端换取字节）；
-    - ``photo_urls``：Java 直传的 HTTP(S) 地址（Python 侧直接 GET 拉取，
-      不再要求 Java 先落对象存储）。
+    照片引用只有一种形态：``photo_urls``（MinIO 绝对 URL，Python 侧直接
+    GET 拉取字节）。没有照片时由服务层返回 ``SKIPPED``，不做参数校验。
 
     幂等键契约：``room-judge-{submissionId}-{itemId}-{attempt}``（Java 侧同源
     生成；缺省时服务端按此格式派生）。
@@ -85,28 +79,10 @@ class JudgeRequest:
     attempt: int  # ≥1；同一 item 重拍/补拍后递增
     item_content: str  # 点检内容（如"地面无杂物、无积水"）
     item_type: str  # 点检类型=照片应含对象类别（如"地面"；≠辅房类型）
-    photo_object_keys: tuple[str, ...] = ()  # 仅兼容存量：MinIO 对象键（新数据不传）
     photo_urls: tuple[str, ...] = ()  # MinIO 绝对 URL（Python 直接 GET）
     deduction: float | None = None  # 扣分值（透传留痕，判定不用）
     config_version: str | None = None  # 点检项配置版本（留痕）
     room_name: str | None = None  # 辅房名称（prompt 上下文，可选）
-
-    def __post_init__(self) -> None:
-        """C-04 照片契约：至少一张、只用一种形态（URL 或存量对象键），总数 1..端点上限。"""
-        if self.photo_object_keys and self.photo_urls:
-            raise ValueError("photo_object_keys 与 photo_urls 只能出现一种")
-        total = len(self.photo_object_keys) + len(self.photo_urls)
-        if total == 0:
-            raise ValueError("photo_urls 至少提供一张照片")
-        if not 1 <= total <= ENDPOINT_MAX_PHOTOS:
-            raise ValueError(
-                f"照片数量必须为 1..{ENDPOINT_MAX_PHOTOS}，实际 {total}"
-            )
-
-    @property
-    def photo_refs(self) -> tuple[str, ...]:
-        """本次判定实际使用的照片引用（object_key 或 URL，取决于形态）。"""
-        return self.photo_urls or self.photo_object_keys
 
 
 @dataclass(frozen=True)
@@ -121,9 +97,8 @@ class JudgeResult:
     verdict: str | None  # PASS|FAIL；仅 status=JUDGED 时非空
     reason: str
     evidence: str
-    photo_object_keys: tuple[str, ...]
     item_snapshot: dict  # {content,type,deduction,config_version} 执行留痕（PRD 23.2）
-    photo_urls: tuple[str, ...] = ()  # 直传 URL 形态时的照片引用（留痕/回放）
+    photo_urls: tuple[str, ...] = ()  # 照片引用（留痕/回放）
     stage_trace: dict = field(default_factory=dict)
     model_version: str = ""
     prompt_versions: dict = field(default_factory=dict)
@@ -134,7 +109,6 @@ class JudgeResult:
 __all__ = [
     "ALL_STATUSES",
     "ContentJudgeSchema",
-    "ENDPOINT_MAX_PHOTOS",
     "JudgeRequest",
     "JudgeResult",
     "STAGE_CONTENT_JUDGE",

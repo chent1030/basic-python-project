@@ -1,11 +1,12 @@
-"""BUG-1 回归测试：MinIO TCP 级失败与意外异常不得 500 / 卡 RUNNING。
+"""BUG-1 回归测试：取图 TCP 级失败与意外异常不得 500 / 卡 RUNNING。
 
 背景（波次 6 A10/C7 发现）：
 - fetch_bytes 只包 HTTP≠200，httpx.ConnectError 裸抛穿透两层 except → HTTP 500；
 - service.py except CheckRunnerError 为死代码，意外异常后行卡 RUNNING 被扫描误标 TIMEOUT。
 
 修复口径：
-1. fetch_bytes 捕获 httpx.TransportError → ModelCallError（与 HTTP≠200 同语义）→ DEGRADED 不伪造；
+1. 照片 URL 取图与 fetch_bytes 捕获 httpx.TransportError → ModelCallError（与 HTTP≠200 同语义）
+   → DEGRADED 不伪造；
 2. _execute 兜底 except Exception → FAILED+CHECK_ERROR + 正常回调，不再裸抛。
 """
 
@@ -32,35 +33,32 @@ from .test_a10_boundaries import FakeModelCheckClient
 from .test_check_pipeline import image_result, snapshot_of, valid_field
 
 
-async def test_minio_connect_error_degrades_not_500() -> None:
-    """MinIO TCP 连接失败（ConnectError）→ 与 503 同语义：DEGRADED + SKIPPED 不伪造。"""
+async def test_photo_url_connect_error_degrades_not_500() -> None:
+    """照片 URL TCP 连接失败（ConnectError）→ 与 503 同语义：DEGRADED + SKIPPED 不伪造。"""
 
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused")
 
-    cfg = MinIOSettings(
-        endpoint="http://minio.test",
-        access_key="ak",
-        secret_key="sk",
-        bucket="cps-attachments",
-    )
-    fetcher = MinIOObjectFetcher(cfg, transport=httpx.MockTransport(handler))
     pipe = CheckPipeline(
         make_settings(),
         model_client=FakeModelCheckClient(
             results=[valid_field() for _ in range(3)] + [image_result()]
         ),
-        minio=fetcher,
+        url_transport=httpx.MockTransport(handler),
     )
     snap = snapshot_of(
-        before_attachments=[{"object_key": "before/1.png", "file_name": "1.png"}],
-        after_attachments=[{"object_key": "after/1.png", "file_name": "1.png"}],
+        before_attachments=[
+            {"url": "http://java.test/before/1.png", "file_name": "1.png"}
+        ],
+        after_attachments=[
+            {"url": "http://java.test/after/1.png", "file_name": "1.png"}
+        ],
     )
     mc = await pipe.run(snap, None)
     ic = mc["image_compare"]
     assert ic["implementation_status"] == "DEGRADED"
     assert ic["verdict"] == "SKIPPED"
-    assert "连接失败" in (ic["reason"] or "")
+    assert "附件 URL 拉取失败" in (ic["reason"] or "")
     assert "ConnectError" in (ic["reason"] or "")
 
 

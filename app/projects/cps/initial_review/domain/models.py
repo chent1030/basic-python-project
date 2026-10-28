@@ -6,60 +6,35 @@ cps_initial_review_task / cps_initial_review_item 的字段命名。
 
 from __future__ import annotations
 
-import hashlib
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AttachmentRef(BaseModel):
-    """整改前后图片引用：``url`` / ``object_key`` / ``content_base64`` 三者恰取其一。
+    """整改前后图片引用：只有 ``url`` 一种形态（MinIO 公开绝对 URL）。
 
-    - ``url``：外部/Java 侧可直接访问的 http(s) 地址（Java 直接传 URL 的形态），
-      由 Python 侧 GET 拉取后转 data URL 送视觉模型；
-    - ``object_key``：对象存储（MinIO）对象键，正式形态；
-    - ``content_base64``：过渡形态，Java 直传原文（仅首次执行内存可得）。
+    由 Python 侧对 URL 发起 HTTP(S) GET 后转 data URL 送视觉模型；没有 URL
+    或取不到图时按「不判定」（SKIPPED/DEGRADED）处理，不做参数校验。
 
     语义检查（视觉/雷同）本波次为 NOT_IMPLEMENTED，附件仅留元数据指纹用于
-    幂等/重放比对，不落完整 base64；``url`` 只落 URL 本身，重放时按 URL 重新拉取。
+    幂等/重放比对；``url`` 只落 URL 本身，重放时按 URL 重新拉取。
     """
 
     model_config = ConfigDict(extra="forbid")
 
     attachment_id: str | None = Field(default=None, max_length=64)
     url: str | None = Field(default=None, max_length=2048)
-    object_key: str | None = Field(default=None, max_length=512)
-    content_base64: str | None = Field(default=None)
     file_name: str | None = Field(default=None, max_length=256)
 
-    @field_validator("url")
-    @classmethod
-    def _http_url(cls, value: str | None) -> str | None:
-        if value and not value.lower().startswith(("http://", "https://")):
-            raise ValueError("attachment.url 必须是 http(s) 绝对地址")
-        return value
-
-    @model_validator(mode="after")
-    def _exactly_one_source(self) -> AttachmentRef:
-        provided = [x for x in (self.url, self.object_key, self.content_base64) if x]
-        if len(provided) != 1:
-            raise ValueError(
-                "attachment 必须且只能提供 url、object_key 或 content_base64 其中之一"
-            )
-        return self
-
     def fingerprint_meta(self) -> dict[str, Any]:
-        """存入 input_snapshot 的元数据（剥离 base64 原文，只留摘要，防 PG 膨胀）。"""
-        meta: dict[str, Any] = {"attachment_id": self.attachment_id, "file_name": self.file_name}
+        """存入 input_snapshot 的元数据（保留 URL 以便重放时重新拉取）。"""
+        meta: dict[str, Any] = {
+            "attachment_id": self.attachment_id,
+            "file_name": self.file_name,
+        }
         if self.url:
-            # 保留完整 URL：重放执行没有请求原文，只能按 URL 重新拉取。
             meta["url"] = self.url
-        if self.object_key:
-            meta["object_key"] = self.object_key
-        if self.content_base64:
-            digest = hashlib.sha256(self.content_base64.encode("ascii", "ignore")).hexdigest()
-            meta["content_base64_sha256"] = digest
-            meta["content_base64_length"] = len(self.content_base64)
         return meta
 
 

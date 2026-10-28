@@ -272,8 +272,6 @@ class RoomCheckB6JudgeService:
             raise JudgeRequestError("check_item_id 不能为空")
         if len(evidence.check_item_id) > 64:
             raise JudgeRequestError("check_item_id 超过 64 字符")
-        if not evidence.photo_object_key and not evidence.photo_url:
-            raise JudgeRequestError("photo_object_key 与 photo_url 至少需一个")
 
     # -- 主入口 ----------------------------------------------------------------
     async def judge(self, evidence: RoomCheckEvidence) -> RoomCheckVerdict:
@@ -378,15 +376,12 @@ class RoomCheckB6JudgeService:
     async def _resolve_photo_data_url(self, evidence: RoomCheckEvidence) -> str:
         """照片 → data URL：显式注入 > evidence.photo_url（HTTP GET）> 占位图。
 
-        URL 拉取失败 → JudgeTechnicalError → judge() 转固定 fallback（与模型
-        阶段技术失败同语义，不伪造 PASS）。
+        照片引用只有「MinIO 绝对 URL」一种形态；URL 拉取失败 → JudgeTechnicalError
+        → judge() 转固定 fallback（与模型阶段技术失败同语义，不伪造 PASS）。
         """
         if self._photo_data_url:
             return self._photo_data_url
         if evidence.photo_url:
-            # 已是 data URL（Java 内联/联调直传）→ 直接送模型，不再发起 HTTP
-            if evidence.photo_url.startswith("data:"):
-                return evidence.photo_url
             return await self._fetch_photo_url(evidence.photo_url)
         return PLACEHOLDER_PHOTO_DATA_URL
 
@@ -399,7 +394,8 @@ class RoomCheckB6JudgeService:
                 timeout=self._stage_timeout,
             ) as client:
                 resp = await client.get(url)
-        except httpx.TransportError as exc:
+        except (httpx.TransportError, ValueError) as exc:
+            # 非 http(s) 值/非法 URL 不做参数校验：统一按“取不到图”的技术失败降级
             raise JudgeTechnicalError(
                 f"照片 URL 拉取失败 {url}：{type(exc).__name__}: {exc}"
             ) from exc

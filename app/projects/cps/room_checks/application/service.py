@@ -1,9 +1,8 @@
 """B6 辅房点检判定应用服务（契约 C-04，同步 API）。
 
 判定链（PRD §24.1 照片-only，两阶段）：
-1. 取图：object_key → MinIO S3 GET，或 URL → HTTP(S) GET，统一转 data URL
-   （复用 initial_review 基建；MinIO 配置缺失且走 object_key 时 → SKIPPED
-   不伪造）；
+1. 取图：照片引用只有 MinIO 绝对 URL 一种形态 → HTTP(S) GET → data URL
+   （没有照片 → SKIPPED，不伪造；取图技术失败 → 502 不缓存）；
 2. 阶段①类型匹配：视觉模型校验照片主体是否为点检项要求的类型；
    不符 → TYPE_MISMATCH（须重拍，不进入合格判断，AC-08）；
 3. 阶段②内容判定：按点检内容判断 PASS/FAIL + 理由 + 证据；
@@ -40,7 +39,6 @@ from app.projects.cps.initial_review.infrastructure.config import (
 )
 from app.projects.cps.initial_review.infrastructure.model_client import (
     MIME_BY_SUFFIX,
-    MinIOObjectFetcher,
     ModelCallError,
     ModelUnavailableError,
 )
@@ -77,7 +75,7 @@ ROOM_JUDGE_MODEL_VERSION = "room-judge/qwen-vl@1"
 
 
 class JudgeRequestError(ValueError):
-    """入参不合法（照片数超预算等）→ 端点 422。"""
+    """入参不合法 → 端点 422（B6 三级接口的字段契约校验使用）。"""
 
 
 class JudgeTechnicalError(Exception):
@@ -91,13 +89,6 @@ class VisionModelClient(Protocol):
     async def complete_vision_json(
         self, prompt: str, image_data_urls: list[str], schema: type[Any]
     ) -> Any: ...
-
-
-@runtime_checkable
-class PhotoFetcher(Protocol):
-    """object_key → data URL（MinIOObjectFetcher 满足）；URL 形态走内建 HTTP。"""
-
-    async def fetch_data_url(self, object_key: str) -> str: ...
 
 
 def _url_suffix(url: str) -> str:
@@ -169,7 +160,6 @@ class RoomCheckJudgeService:
         self,
         *,
         model_client: VisionModelClient | None = None,
-        fetcher: PhotoFetcher | None = None,
         settings: InitialReviewSettings | None = None,
         vision_enabled: bool | None = None,
         url_transport: httpx.AsyncBaseTransport | None = None,
@@ -182,7 +172,6 @@ class RoomCheckJudgeService:
         else:
             self._vision_enabled, self._vision_source = resolve_vision_enabled()
         self._model_client = model_client
-        self._fetcher = fetcher
         self._url_transport = url_transport
         self._cache = _ResultCache()
 
@@ -192,11 +181,6 @@ class RoomCheckJudgeService:
         return self._vision_enabled
 
     # -- 惰性装配（测试注入 Fake；生产首次调用时装配真实客户端） ------------
-    @property
-    def max_photos(self) -> int:
-        """照片数量上限（送视觉模型的上下文预算，配置 max_images_per_side）。"""
-        return max(1, int(self._settings.model_check.max_images_per_side))
-
     def _client(self) -> VisionModelClient:
         if self._model_client is None:
             from app.projects.cps.initial_review.infrastructure.model_client import (
@@ -206,38 +190,22 @@ class RoomCheckJudgeService:
             self._model_client = DashScopeModelClient(self._settings.model_check)
         return self._model_client
 
-    def _photo_fetcher(self) -> PhotoFetcher:
-        if self._fetcher is None:
-            self._fetcher = MinIOObjectFetcher(self._settings.minio)
-        return self._fetcher
-
     # -- 主入口 --------------------------------------------------------------
     async def judge(self, req: JudgeRequest) -> JudgeResult:
         cached = self._cache.get(req.idempotency_key)
         if cached is not None:
             return replace(cached, replayed=True)
 
-        if len(req.photo_refs) > self.max_photos:
-            raise JudgeRequestError(
-                f"照片数量 {len(req.photo_refs)} 超过模型预算上限 "
-                f"{self.max_photos}（max_images_per_side）"
-            )
-
         # 前置条件不具备 → SKIPPED（不伪造判定，A7 原则；结果可缓存重放）
         if not self._vision_enabled:
             return self._finish_skipped(
                 req, f"模型检查已显式禁用（{self._vision_source}）"
             )
-        # URL 形态不依赖对象存储：仅 object_key 形态才受 MinIO 配置约束
+        # 没有照片 → SKIPPED（不报 422：照片是可选证据，缺图就不判）
         if not req.photo_urls:
-            minio_reason = self._settings.minio.unavailable_reason
-            if minio_reason:
-                return self._finish_skipped(req, f"照片无法获取：{minio_reason}")
+            return self._finish_skipped(req, "未提供照片，无法判定")
 
-        try:
-            outcome = await self._run_chain(req)
-        except _SkipSignal as exc:
-            outcome = self._skipped_outcome(str(exc))
+        outcome = await self._run_chain(req)
         result = JudgeResult(
             idempotency_key=req.idempotency_key,
             submission_id=req.submission_id,
@@ -247,7 +215,6 @@ class RoomCheckJudgeService:
             verdict=outcome.verdict,
             reason=outcome.reason,
             evidence=outcome.evidence,
-            photo_object_keys=req.photo_object_keys,
             photo_urls=req.photo_urls,
             item_snapshot={
                 "content": req.item_content,
@@ -356,21 +323,8 @@ class RoomCheckJudgeService:
         )
 
     async def _load_photos(self, req: JudgeRequest) -> list[str]:
-        """照片引用 → data URL。
-
-        - photo_urls：Java 直传地址 → HTTP(S) GET（技术失败 → JudgeTechnicalError
-          → 端点 502，不缓存，与 MinIO 网络故障同语义）；
-        - photo_object_keys：MinIO GET（配置缺失抛 ModelUnavailableError → SKIPPED）。
-        """
-        if req.photo_urls:
-            return [await self._fetch_photo_url(url) for url in req.photo_urls]
-        fetcher = self._photo_fetcher()
-        try:
-            return [await fetcher.fetch_data_url(key) for key in req.photo_object_keys]
-        except ModelUnavailableError as exc:
-            raise _SkipSignal(str(exc)) from exc
-        except Exception as exc:  # noqa: BLE001 - MinIO 网络/签名故障统一技术失败
-            raise JudgeTechnicalError(f"照片获取失败：{type(exc).__name__}: {exc}") from exc
+        """照片 URL → data URL（HTTP(S) GET；技术失败 → 端点 502，不缓存）。"""
+        return [await self._fetch_photo_url(url) for url in req.photo_urls]
 
     async def _fetch_photo_url(self, url: str) -> str:
         """HTTP(S) GET → data URL（超时/连接失败/非 200/空/超大 → 技术失败 502）。"""
@@ -383,7 +337,8 @@ class RoomCheckJudgeService:
                 timeout=budget,
             ) as client:
                 resp = await client.get(url)
-        except httpx.TransportError as exc:
+        except (httpx.TransportError, ValueError) as exc:
+            # 非 http(s) 值/非法 URL 不做参数校验：统一按“取不到图”的技术失败降级
             raise JudgeTechnicalError(
                 f"照片 URL 拉取失败 {url}：{type(exc).__name__}: {exc}"
             ) from exc
@@ -430,7 +385,6 @@ class RoomCheckJudgeService:
             verdict=None,
             reason=outcome.reason,
             evidence="",
-            photo_object_keys=req.photo_object_keys,
             photo_urls=req.photo_urls,
             item_snapshot={
                 "content": req.item_content,
@@ -448,10 +402,6 @@ class RoomCheckJudgeService:
         )
         self._cache.put(req.idempotency_key, result)
         return result
-
-
-class _SkipSignal(Exception):
-    """内部信号：取图阶段前置条件缺失 → 转化为 SKIPPED 结果（不伪造）。"""
 
 
 __all__ = [

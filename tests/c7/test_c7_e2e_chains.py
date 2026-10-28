@@ -378,13 +378,15 @@ async def test_chain3_three_stage_judgment_pass_contract() -> None:
     """
     from app.projects.cps.room_checks.application.judge_service import RoomCheckB6JudgeService
     vision = _vision_with([_typed_ok(), _content_pass(), _evidence_pass()])
-    service = RoomCheckB6JudgeService(vision_client=vision)
+    service = RoomCheckB6JudgeService(
+        vision_client=vision, photo_data_url="data:image/jpeg;base64,/9j/test"
+    )
     app = build_room_checks_app(service=service)
     payload = {
         "fingerprint": "rc-c7-pass",
         "roomType": "PRIMARY",
         "checkItemId": "ci-c7-pass",
-        "photoUrl": "data:image/jpeg;base64,/9j/test",
+        "photoUrl": "http://127.0.0.1:9000/cps-attachments/cps/c7.jpg",
         "expectedMatchType": "地面",
         "expectedKeywords": ["无杂物", "无积水"],
     }
@@ -413,13 +415,15 @@ async def test_chain3_three_stage_short_circuit_on_type_mismatch() -> None:
         parsed={"matched": False, "observed_type": "天花板", "reason": "主体不符"},
         model="qwen-vl-plus",
     )])
-    service = RoomCheckB6JudgeService(vision_client=vision)
+    service = RoomCheckB6JudgeService(
+        vision_client=vision, photo_data_url="data:image/jpeg;base64,/9j/test"
+    )
     app = build_room_checks_app(service=service)
     body = post_judge(app, {
         "fingerprint": "rc-c7-mismatch",
         "roomType": "PRIMARY",
         "checkItemId": "ci-c7-mm",
-        "photoUrl": "data:image/jpeg;base64,/9j/test",
+        "photoUrl": "http://127.0.0.1:9000/cps-attachments/cps/c7.jpg",
         "expectedMatchType": "地面",
     }).json()
     # 断言 1：整体 PROBLEM + 0 分
@@ -439,13 +443,15 @@ async def test_chain3_lru_ttl_idempotent_replay() -> None:
     """
     from app.projects.cps.room_checks.application.judge_service import RoomCheckB6JudgeService
     vision = _vision_with([_typed_ok(), _content_pass(), _evidence_pass()])
-    service = RoomCheckB6JudgeService(vision_client=vision)
+    service = RoomCheckB6JudgeService(
+        vision_client=vision, photo_data_url="data:image/jpeg;base64,/9j/test"
+    )
     app = build_room_checks_app(service=service)
     payload = {
         "fingerprint": "rc-c7-idem",
         "roomType": "PRIMARY",
         "checkItemId": "ci-c7-idem",
-        "photoUrl": "data:image/jpeg;base64,/9j/test",
+        "photoUrl": "http://127.0.0.1:9000/cps-attachments/cps/c7.jpg",
         "expectedMatchType": "地面",
         "expectedKeywords": ["无杂物", "无积水"],
     }
@@ -466,13 +472,15 @@ async def test_chain3_rejudge_invalidates_cache_and_reruns() -> None:
     vision = _vision_with(
         [_typed_ok(), _content_pass(), _evidence_pass()] * 2
     )
-    service = RoomCheckB6JudgeService(vision_client=vision)
+    service = RoomCheckB6JudgeService(
+        vision_client=vision, photo_data_url="data:image/jpeg;base64,/9j/test"
+    )
     app = build_room_checks_app(service=service)
     payload = {
         "fingerprint": "rc-c7-rejudge",
         "roomType": "PRIMARY",
         "checkItemId": "ci-c7-rj",
-        "photoUrl": "data:image/jpeg;base64,/9j/test",
+        "photoUrl": "http://127.0.0.1:9000/cps-attachments/cps/c7.jpg",
         "expectedMatchType": "地面",
         "expectedKeywords": ["无杂物", "无积水"],
     }

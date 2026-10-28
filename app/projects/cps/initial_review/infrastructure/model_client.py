@@ -1,4 +1,4 @@
-"""A7/A8 模型客户端 + object_key 附件读取（MinIO S3 GET）。
+"""A7/A8 模型客户端 + MinIO object_key 附件读取（仅 speech/weekly_report）。
 
 设计口径（波次 2 设计文档 §2.1/§2.4）：
 - 结构化输出：prompt 约定 JSON → 容错解析（剥代码围栏/截取首个 JSON 对象）→
@@ -8,8 +8,9 @@
   （上层记 SKIPPED + 原因）；
 - 复用全局 ``app.services.llm.llm`` 单例（LangChain ChatOpenAI，多 provider），
   单测注入 FakeModelCheckClient，真实冒烟走 scripts/wave2_real_model_smoke.py；
-- MinIO：S3 SigV4 GET（httpx + stdlib hmac/sha256，零新增依赖；对齐 Java 侧
-  MinIO SDK 同一凭据体系，endpoint 默认 http://127.0.0.1:9000）。
+- MinIO：S3 SigV4 GET（httpx + stdlib hmac/sha256，零新增依赖）。C-01 整改
+  照片已改为 URL 直传（HTTP GET），此处的 object_key 取流只剩 speech
+  （``audio_object_key``）与 weekly_report（``archive_object_key``）两个调用方。
 """
 
 from __future__ import annotations
@@ -311,7 +312,12 @@ def _sign_key(secret: str, date: str, region: str, service: str) -> bytes:
 
 
 class MinIOObjectFetcher:
-    """S3 SigV4 GET（path-style：{endpoint}/{bucket}/{object_key}）。"""
+    """S3 SigV4 GET（path-style：{endpoint}/{bucket}/{object_key}）。
+
+    仅 ``speech``（``audio_object_key``）与 ``weekly_report``（``archive_object_key``）
+    仍按对象键取字节使用；C-01/C-04 的图片引用已统一为 MinIO 绝对 URL，
+    不再经由本类。
+    """
 
     def __init__(
         self,
@@ -325,6 +331,7 @@ class MinIOObjectFetcher:
         self._region = region
 
     async def fetch_bytes(self, object_key: str) -> bytes:
+        """object_key → 原始字节（speech/weekly_report 使用）。"""
         reason = self._cfg.unavailable_reason
         if reason:
             raise ModelUnavailableError(f"object_key 附件无法获取：{reason}")
@@ -384,7 +391,11 @@ class MinIOObjectFetcher:
         return resp.content
 
     async def fetch_data_url(self, object_key: str) -> str:
-        """object_key → data URL（送视觉模型的统一形态）。"""
+        """object_key → data URL。
+
+        仅被 scripts/wave2_real_model_smoke.py 的历史 object_key 冒烟路径引用；
+        C-04/C-01 生产链路已统一按 URL 取图，不再经过此方法。
+        """
         data = await self.fetch_bytes(object_key)
         suffix = "." + object_key.rsplit(".", 1)[-1].lower() if "." in object_key else ""
         mime = MIME_BY_SUFFIX.get(suffix, "application/octet-stream")

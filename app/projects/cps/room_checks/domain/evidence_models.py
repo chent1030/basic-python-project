@@ -59,9 +59,8 @@ class RoomCheckEvidence:
             端通常用 ``room-check-{checkItemId}-{submissionId}-{attempt}``）。
         room_type: 辅房类型（与 ``RoomType`` 一致）。
         check_item_id: 点检项 ID（与 Java 端 ``cps_room_check_item.id`` 对齐）。
-        photo_object_key: MinIO 对象键（object_key，逗号分隔多张）。
-        photo_url: 可选 HTTP URL（绕开 object_key 直接送视觉模型；与
-            object_key 互斥——优先使用 object_key 走 MinIO 凭据链）。
+        photo_url: 照片的 MinIO 绝对 URL（Python 直接 GET 换取字节送视觉
+            模型；无照片时为空字符串）。
         expected_match_type: 期望照片主体类型（如「地面」「配电柜」），用于
             一级 type-match 校验。
         expected_keywords: 期望出现的关键物证（逗号或列表分隔），用于二级
@@ -72,8 +71,7 @@ class RoomCheckEvidence:
     fingerprint: str
     room_type: RoomType
     check_item_id: str
-    photo_object_key: str
-    photo_url: str | None = None
+    photo_url: str = ""
     expected_match_type: str | None = None
     expected_keywords: tuple[str, ...] = ()
     submitted_at: datetime = field(default_factory=datetime.utcnow)

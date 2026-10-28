@@ -23,7 +23,7 @@ from app.projects.cps.room_checks.application.service import (
     RoomCheckJudgeService,
     derive_idempotency_key,
 )
-from app.projects.cps.room_checks.domain.models import ENDPOINT_MAX_PHOTOS, JudgeRequest
+from app.projects.cps.room_checks.domain.models import JudgeRequest
 
 log = logging.getLogger("cps_agent.room_checks")
 
@@ -76,57 +76,16 @@ def _coerce_str(
     return v
 
 
-def _coerce_photo_list(value: Any, field_name: str, *, max_len: int) -> list[str]:
-    if not isinstance(value, list) or not value:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"{field_name} must be a non-empty list",
-        )
-    out: list[str] = []
-    for i, item in enumerate(value):
-        coerced = _coerce_str(item, f"{field_name}[{i}]", max_len=max_len)
-        out.append(coerced)  # type: ignore[arg-type]  # _coerce_str 必返 str（required）
-    return out
+def _coerce_photo_urls(payload: dict[str, Any]) -> list[str]:
+    """C-04 照片引用：只有 photo_urls（MinIO 绝对 URL）一种形态。
 
-
-def _coerce_photos(payload: dict[str, Any]) -> tuple[list[str], list[str]]:
-    """C-04 照片引用：photo_object_keys 或 photo_urls 恰有一个非空，总数 1..上限。
-
-    Java 传 MinIO 绝对 URL（Python 侧 GET 拉取）；object_key 形态只为兼容存量数据，
-    两种同时出现或一张都没有 → 422。
+    没有照片 → 返回空列表，服务层据此返回 SKIPPED（不再 422）；不做张数上下限
+    与 URL 格式校验——非 http 值在取图阶段按技术失败处理。
     """
-    raw_keys = payload.get("photo_object_keys")
-    raw_urls = payload.get("photo_urls")
-    keys = (
-        _coerce_photo_list(raw_keys, "photo_object_keys", max_len=512)
-        if raw_keys
-        else []
-    )
-    urls = (
-        _coerce_photo_list(raw_urls, "photo_urls", max_len=2048) if raw_urls else []
-    )
-    if keys and urls:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="photo_object_keys 与 photo_urls 只能出现一种",
-        )
-    if not keys and not urls:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="photo_urls 至少提供一张照片",
-        )
-    if len(keys) + len(urls) > ENDPOINT_MAX_PHOTOS:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"照片数量 exceeds {ENDPOINT_MAX_PHOTOS} items",
-        )
-    for i, url in enumerate(urls):
-        if not url.lower().startswith(("http://", "https://")):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"photo_urls[{i}] must be http(s) URL",
-            )
-    return keys, urls
+    raw = payload.get("photo_urls")
+    if not isinstance(raw, list):
+        return []
+    return [item.strip() for item in raw if isinstance(item, str) and item.strip()]
 
 
 def _coerce_attempt(value: Any) -> int:
@@ -161,7 +120,7 @@ async def judge_room_check(
     attempt = _coerce_attempt(payload.get("attempt"))
     item_content = _coerce_str(payload.get("item_content"), "item_content", max_len=512)
     item_type = _coerce_str(payload.get("item_type"), "item_type", max_len=64)
-    photo_object_keys, photo_urls = _coerce_photos(payload)
+    photo_urls = _coerce_photo_urls(payload)
     deduction = _coerce_deduction(payload.get("deduction"))
     config_version = _coerce_str(
         payload.get("config_version"), "config_version", max_len=64, required=False
@@ -179,7 +138,6 @@ async def judge_room_check(
         attempt=attempt,
         item_content=item_content,
         item_type=item_type,
-        photo_object_keys=tuple(photo_object_keys),
         photo_urls=tuple(photo_urls),
         deduction=deduction,
         config_version=config_version,
@@ -210,7 +168,6 @@ async def judge_room_check(
         "verdict": result.verdict,
         "reason": result.reason,
         "evidence": result.evidence,
-        "photo_object_keys": list(result.photo_object_keys),
         "photo_urls": list(result.photo_urls),
         "item_snapshot": result.item_snapshot,
         "stage_trace": result.stage_trace,

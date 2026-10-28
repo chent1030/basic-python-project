@@ -406,15 +406,6 @@ async def test_empty_fingerprint_raises_request_error() -> None:
         await svc.judge(make_evidence(fingerprint=""))
 
 
-@pytest.mark.asyncio
-async def test_missing_photo_raises_request_error() -> None:
-    svc, _ = _build_service(results=[_typed_ok()])
-    with pytest.raises(JudgeRequestError):
-        await svc.judge(
-            make_evidence(photo_object_key="", photo_url=None)
-        )
-
-
 # -- 评分边界与组合 ----------------------------------------------------------
 @pytest.mark.asyncio
 async def test_content_mismatch_alone_makes_problem() -> None:
@@ -449,7 +440,7 @@ async def test_photo_url_fetched_and_sent_as_data_url() -> None:
         url_transport=_photo_transport(),
     )
     await svc.judge(
-        make_evidence(photo_object_key="", photo_url="http://java.local/a.jpg")
+        make_evidence(photo_url="http://java.local/a.jpg")
     )
     assert client.calls[0]["images"][0].startswith("data:image/jpeg;base64,")
 
@@ -460,7 +451,7 @@ async def test_photo_url_http_error_falls_back_to_problem() -> None:
         results=[], url_transport=_photo_transport(status=500)
     )
     v = await svc.judge(
-        make_evidence(photo_object_key="", photo_url="http://java.local/a.jpg")
+        make_evidence(photo_url="http://java.local/a.jpg")
     )
     assert v.overall == JudgeVerdict.PROBLEM
     assert v.score == 0
@@ -475,7 +466,7 @@ async def test_injected_photo_data_url_wins_over_photo_url() -> None:
         photo_data_url="data:image/jpeg;base64,injected",
     )
     v = await svc.judge(
-        make_evidence(photo_object_key="", photo_url="http://java.local/a.jpg")
+        make_evidence(photo_url="http://java.local/a.jpg")
     )
     assert v.overall == JudgeVerdict.PASS
     assert client.calls[0]["images"] == ["data:image/jpeg;base64,injected"]

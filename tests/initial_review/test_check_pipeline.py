@@ -2,10 +2,9 @@
 
 覆盖：
 - A8：IMPLEMENTED / 模型不可用 SKIPPED / 技术失败与单字段预算超时 DEGRADED / 空字段跳过；
-- A7：base64 直传 / object_key 经 MinIO（httpx.MockTransport 模拟 S3）/
-  url 直传（httpx.MockTransport 模拟 Java 提供的图片地址）/ 单侧缺照片 SKIPPED /
-  重放执行无 base64 原文 DEGRADED / 读数不一致不弱于 WARN；
-- 契约：AttachmentRef url|object_key|content_base64 三者恰取一 + fingerprint_meta 带 url；
+- A7：url 直传（httpx.MockTransport 模拟 Java 提供的图片地址）/ 单侧缺照片 SKIPPED /
+  读数不一致不弱于 WARN；照片引用只有 MinIO 绝对 URL 一种形态；
+- 契约：AttachmentRef 只有 url（+ attachment_id/file_name），fingerprint_meta 带 url；
 - A6：历史合并（issue_snapshot.history_submissions + DB 装载器去重）。
 """
 
@@ -24,7 +23,6 @@ from app.projects.cps.initial_review.domain.models import AttachmentRef
 from app.projects.cps.initial_review.domain.text_validity import FieldValidity
 from app.projects.cps.initial_review.domain.verdicts import aggregate_overall
 from app.projects.cps.initial_review.infrastructure.model_client import (
-    MinIOObjectFetcher,
     ModelCallError,
     extract_json_object,
 )
@@ -92,26 +90,8 @@ PNG_1PX = base64.b64encode(
 ).decode("ascii")
 
 
-def b64_attachment(content: str = PNG_1PX, name: str = "a.png") -> AttachmentRef:
-    return AttachmentRef(
-        attachment_id="att-1", file_name=name, content_base64=content
-    )
-
-
-def key_attachment(key: str = "before/1.png") -> AttachmentRef:
-    return AttachmentRef(attachment_id="att-k1", file_name="1.png", object_key=key)
-
-
 def url_attachment(link: str = "http://java.test/files/1.png") -> AttachmentRef:
     return AttachmentRef(attachment_id="att-u1", file_name="1.png", url=link)
-
-
-class Req:
-    """最小 request 替身：pipeline 只读 before/after_attachments 属性。"""
-
-    def __init__(self, before: list | None, after: list | None) -> None:
-        self.before_attachments = before or []
-        self.after_attachments = after or []
 
 
 class NullClient:
@@ -122,24 +102,6 @@ class NullClient:
 
     async def complete_vision_json(self, prompt, urls, schema):
         raise AssertionError("不应触视觉调用")
-
-
-def minio_mock(payload: bytes = b"pngbytes") -> MinIOObjectFetcher:
-    settings = make_settings()
-    from app.projects.cps.initial_review.infrastructure.config import MinIOSettings
-
-    cfg = MinIOSettings(
-        endpoint="http://minio.test",
-        access_key="ak",
-        secret_key="sk",
-        bucket="cps-attachments",
-    )
-    transport = httpx.MockTransport(
-        lambda request: httpx.Response(200, content=payload)
-    )
-    assert cfg.unavailable_reason is None
-    assert settings is not None
-    return MinIOObjectFetcher(cfg, transport=transport)
 
 
 # ------------------------------------------------------------------ extract_json
@@ -296,6 +258,15 @@ async def test_image_compare_no_attachments_skips() -> None:
     assert "未提交" in ic["reason"]
 
 
+def png_transport() -> httpx.MockTransport:
+    """模拟 Java/MinIO 提供的图片地址：恒返回 PNG 字节。"""
+    return httpx.MockTransport(
+        lambda request: httpx.Response(
+            200, content=b"pngbytes", headers={"content-type": "image/png"}
+        )
+    )
+
+
 async def test_image_compare_one_side_missing_skips() -> None:
     from app.projects.cps.initial_review.infrastructure.model_client import (
         FakeModelCheckClient,
@@ -305,119 +276,46 @@ async def test_image_compare_one_side_missing_skips() -> None:
     pipe = CheckPipeline(make_settings(), model_client=fake)
     snap = snapshot_of(
         before_attachments=[
-            {"attachment_id": "att-k1", "object_key": "before/1.png", "file_name": "1.png"}
+            {"attachment_id": "att-u1", "url": "http://java.test/before/1.png"}
         ],
         after_attachments=[],
     )
-    mc = await pipe.run(snap, Req([key_attachment()], []))
+    mc = await pipe.run(snap, None)
     assert mc["image_compare"]["verdict"] == "SKIPPED"
     assert "一侧" in mc["image_compare"]["reason"]
     assert all(c["kind"] == "text" for c in fake.calls)  # 未触视觉调用
 
 
-async def test_image_compare_base64_mode_end_to_end() -> None:
+async def test_image_compare_url_mode_end_to_end() -> None:
+    """唯一形态：URL → HTTP GET → data URL 送视觉模型。"""
     from app.projects.cps.initial_review.infrastructure.model_client import (
         FakeModelCheckClient,
     )
 
     fake = FakeModelCheckClient(results=[valid_field() for _ in range(3)] + [image_result()])
-    pipe = CheckPipeline(make_settings(), model_client=fake)
-    before, after = b64_attachment(), b64_attachment(PNG_1PX, "b.png")
+    pipe = CheckPipeline(
+        make_settings(), model_client=fake, url_transport=png_transport()
+    )
     snap = snapshot_of(
         before_attachments=[
-            {
-                "attachment_id": "att-1", "file_name": "a.png",
-                "content_base64_sha256": "ab12", "content_base64_length": 100,
-            }
+            {"attachment_id": "att-1", "url": "http://java.test/before/a.png"}
         ],
         after_attachments=[
-            {
-                "attachment_id": "att-2", "file_name": "b.png",
-                "content_base64_sha256": "cd34", "content_base64_length": 100,
-            }
+            {"attachment_id": "att-2", "url": "http://java.test/after/b.png"}
         ],
     )
-    mc = await pipe.run(snap, Req([before], [after]))
+    mc = await pipe.run(snap, None)
     ic = mc["image_compare"]
     assert ic["implementation_status"] == "IMPLEMENTED"
     assert ic["verdict"] == "PASS"
-    assert ic["evidence_refs"] == ["att-1", "att-2"]
-    # 送检 data URL 前后拼接，MIME 由文件名推断
+    assert ic["evidence_refs"] == [
+        "http://java.test/before/a.png",
+        "http://java.test/after/b.png",
+    ]
     call = fake.calls[-1]
     assert call["kind"] == "vision"
     assert call["images"][0].startswith("data:image/png;base64,")
     assert len(call["images"]) == 2
-
-
-async def test_image_compare_object_key_mode_fetches_from_minio() -> None:
-    from app.projects.cps.initial_review.infrastructure.model_client import (
-        FakeModelCheckClient,
-    )
-
-    fake = FakeModelCheckClient(results=[valid_field() for _ in range(3)] + [image_result()])
-    fetcher = minio_mock()
-    pipe = CheckPipeline(make_settings(), model_client=fake, minio=fetcher)
-    snap = snapshot_of(
-        before_attachments=[
-            {"attachment_id": "att-k1", "object_key": "before/1.png", "file_name": "1.png"}
-        ],
-        after_attachments=[
-            {"attachment_id": "att-k2", "object_key": "after/1.png", "file_name": "1.png"}
-        ],
-    )
-    mc = await pipe.run(snap, None)  # object_key 模式无需 request 原文
-    ic = mc["image_compare"]
-    assert ic["implementation_status"] == "IMPLEMENTED"
-    assert ic["evidence_refs"] == ["before/1.png", "after/1.png"]
-    assert fake.calls[-1]["images"][0].startswith("data:image/png;base64,")
-
-
-async def test_image_compare_minio_unavailable_skips() -> None:
-    """MinIO 未配置（object_key 模式前置缺失）→ SKIPPED 不伪造。"""
-    from app.projects.cps.initial_review.infrastructure.config import MinIOSettings
-    from app.projects.cps.initial_review.infrastructure.model_client import (
-        FakeModelCheckClient,
-        MinIOObjectFetcher,
-    )
-
-    fetcher = MinIOObjectFetcher(MinIOSettings("", "", "", ""))
-    pipe = CheckPipeline(
-        make_settings(),
-        model_client=FakeModelCheckClient(results=[valid_field() for _ in range(3)]),
-        minio=fetcher,
-    )
-    snap = snapshot_of(
-        before_attachments=[{"object_key": "before/1.png"}],
-        after_attachments=[{"object_key": "after/1.png"}],
-    )
-    mc = await pipe.run(snap, None)
-    ic = mc["image_compare"]
-    assert ic["verdict"] == "SKIPPED"
-    assert "配置不完整" in ic["reason"]
-
-
-async def test_image_compare_base64_replay_without_original_degrades() -> None:
-    """重放执行（request=None）拿不到 base64 原文 → DEGRADED，不伪造结论。"""
-    from app.projects.cps.initial_review.infrastructure.model_client import (
-        FakeModelCheckClient,
-    )
-
-    pipe = CheckPipeline(
-        make_settings(),
-        model_client=FakeModelCheckClient(results=[valid_field() for _ in range(3)]),
-    )
-    snap = snapshot_of(
-        before_attachments=[
-            {"attachment_id": "att-1", "content_base64_sha256": "ab12", "file_name": "a.png"}
-        ],
-        after_attachments=[
-            {"attachment_id": "att-2", "content_base64_sha256": "cd34", "file_name": "b.png"}
-        ],
-    )
-    mc = await pipe.run(snap, None)
-    ic = mc["image_compare"]
-    assert ic["implementation_status"] == "DEGRADED"
-    assert "原文不可得" in ic["reason"]
 
 
 async def test_image_compare_readings_mismatch_escalates_to_warn() -> None:
@@ -430,19 +328,19 @@ async def test_image_compare_readings_mismatch_escalates_to_warn() -> None:
         results=[valid_field() for _ in range(3)]
         + [image_result(readings_observed="0.4Ω", readings_match=False)]
     )
-    pipe = CheckPipeline(make_settings(), model_client=fake, minio=minio_mock())
+    pipe = CheckPipeline(
+        make_settings(), model_client=fake, url_transport=png_transport()
+    )
     snap = snapshot_of(
         before_attachments=[
-            {"attachment_id": "att-k1", "object_key": "before/1.png", "file_name": "1.png"}
+            {"attachment_id": "att-b", "url": "http://java.test/before/1.png"}
         ],
         after_attachments=[
-            {"attachment_id": "att-k2", "object_key": "after/1.png", "file_name": "1.png"}
+            {"attachment_id": "att-a", "url": "http://java.test/after/1.png"}
         ],
         issue_snapshot={"readings": [{"name": "接地电阻", "value": "≤0.8Ω"}]},
     )
-    mc = await pipe.run(
-        snap, Req([key_attachment("before/1.png")], [key_attachment("after/1.png")])
-    )
+    mc = await pipe.run(snap, None)
     ic = mc["image_compare"]
     assert ic["verdict"] == "WARN"
     assert ic["readings"]["provided"] is True
@@ -461,11 +359,16 @@ async def test_image_compare_truncates_images_per_side() -> None:
 
     settings = settings_with(max_images_per_side=2)
     fake = FakeModelCheckClient(results=[valid_field() for _ in range(3)] + [image_result()])
-    fetcher = minio_mock()
-    pipe = CheckPipeline(settings, model_client=fake, minio=fetcher)
+    pipe = CheckPipeline(
+        settings, model_client=fake, url_transport=png_transport()
+    )
     snap = snapshot_of(
-        before_attachments=[{"object_key": f"before/{i}.png"} for i in range(4)],
-        after_attachments=[{"object_key": f"after/{i}.png"} for i in range(4)],
+        before_attachments=[
+            {"url": f"http://java.test/before/{i}.png"} for i in range(4)
+        ],
+        after_attachments=[
+            {"url": f"http://java.test/after/{i}.png"} for i in range(4)
+        ],
     )
     mc = await pipe.run(snap, None)
     assert len(fake.calls[-1]["images"]) == 4  # 每侧 2 张
@@ -609,39 +512,27 @@ async def test_image_compare_url_oversize_degrades() -> None:
     assert "上限" in mc["image_compare"]["reason"]
 
 
-# ------------------------------------------------- AttachmentRef 三选一契约
+# ----------------------------------------------------- AttachmentRef 单 url 契约
 
 
-def test_attachment_ref_accepts_exactly_one_of_url_key_base64() -> None:
+def test_attachment_ref_only_carries_url() -> None:
     from pydantic import ValidationError
 
     AttachmentRef(attachment_id="a", url="http://java.test/a.png")
-    AttachmentRef(attachment_id="b", object_key="k/a.png")
-    AttachmentRef(attachment_id="c", content_base64=PNG_1PX)
-    for kwargs in (
-        {},  # 一个都没有
-        {"url": "http://java.test/a.png", "object_key": "k/a.png"},  # 两个
-        {"url": "http://java.test/a.png", "content_base64": PNG_1PX},
-        {"object_key": "k/a.png", "content_base64": PNG_1PX},  # 老的二选一错法仍拒绝
-    ):
+    # 元数据允许为空：取不到图就不判（SKIPPED/DEGRADED），不再做参数校验
+    AttachmentRef(attachment_id="b")
+    # 旧形态（object_key / content_base64）已从契约中删除，额外字段被拒绝
+    for kwargs in ({"object_key": "k/a.png"}, {"content_base64": PNG_1PX}):
         with pytest.raises(ValidationError):
             AttachmentRef(attachment_id="bad", **kwargs)
-
-
-def test_attachment_ref_rejects_non_http_url() -> None:
-    from pydantic import ValidationError
-
-    with pytest.raises(ValidationError):
-        AttachmentRef(url="file:///etc/passwd")
-    with pytest.raises(ValidationError):
-        AttachmentRef(url="minio/bucket/a.png")
+    # 非 http(s) 不做格式校验，交给取图失败降级
+    AttachmentRef(attachment_id="c", url="minio/bucket/a.png")
 
 
 def test_attachment_ref_fingerprint_meta_carries_url_for_replay() -> None:
     meta = url_attachment("http://java.test/files/1.png").fingerprint_meta()
+    assert set(meta) == {"attachment_id", "file_name", "url"}
     assert meta["url"] == "http://java.test/files/1.png"
-    assert "object_key" not in meta and "content_base64_sha256" not in meta
-    # 重放执行只靠元数据即可再拉：快照里存的 url 能被 _resolve_side 直接使用
     assert meta["file_name"] == "1.png"
 
 # ------------------------------------------------------------------------ A6

@@ -6,8 +6,9 @@
 
 端点：
 - POST ``/judge`` — 入参 3-level 判定（fingerpint/roomType/checkItemId/
-  photoObjectKey/photoUrl/expectedMatchType/expectedKeywords）→ 同步返回
-  ``RoomCheckVerdict`` 200 + 异步 dispatch Java 回调；
+  photoUrl/expectedMatchType/expectedKeywords）→ 同步返回
+  ``RoomCheckVerdict`` 200 + 异步 dispatch Java 回调；照片只有 MinIO 绝对
+  URL 一种形态（不再接受 object_key）；
 - POST ``/rejudge`` — system 角色，强制清缓存重跑同一 fingerprint。
 
 鉴权：与既有 C-04 同源（``Identity.require('cps_admin')``）；rejudge
@@ -143,21 +144,10 @@ def _evidence_from_payload(payload: dict[str, Any]) -> RoomCheckEvidence:
     fingerprint = _coerce_str(payload.get("fingerprint"), "fingerprint", max_len=256)
     room_type = _coerce_room_type(payload.get("roomType"))
     check_item_id = _coerce_str(payload.get("checkItemId"), "checkItemId", max_len=64)
-    # photoObjectKey + photoUrl 互斥：必须有其一（与既有 C-04 同语义）
-    photo_object_key = _coerce_str(
-        payload.get("photoObjectKey"),
-        "photoObjectKey",
-        required=False,
-        max_len=512,
-    )
+    # 照片只有一种形态：MinIO 绝对 URL（不再接受 object_key）
     photo_url = _coerce_str(
         payload.get("photoUrl"), "photoUrl", required=False, max_len=2048
     )
-    if not photo_object_key and not photo_url:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="photoObjectKey or photoUrl required",
-        )
     expected_match_type = _coerce_str(
         payload.get("expectedMatchType"),
         "expectedMatchType",
@@ -169,8 +159,7 @@ def _evidence_from_payload(payload: dict[str, Any]) -> RoomCheckEvidence:
         fingerprint=fingerprint,  # type: ignore[arg-type]
         room_type=room_type,
         check_item_id=check_item_id,  # type: ignore[arg-type]
-        photo_object_key=photo_object_key,  # type: ignore[arg-type]
-        photo_url=photo_url,
+        photo_url=photo_url or "",
         expected_match_type=expected_match_type,
         expected_keywords=expected_keywords,
     )
@@ -204,8 +193,7 @@ async def judge_room_check_b6(
     - fingerprint（必填，≤256）：幂等键
     - roomType（必填，枚举）：辅房类型
     - checkItemId（必填，≤64）：点检项 ID
-    - photoObjectKey（必填，≤512）：MinIO 对象键
-    - photoUrl（可选，≤2048）：直连 URL（与 object_key 互斥）
+    - photoUrl（可选，≤2048）：照片的 MinIO 绝对 URL
     - expectedMatchType（可选）：期望照片主体类型
     - expectedKeywords（可选，list[str] 或逗号分隔）：期望关键物证
     """

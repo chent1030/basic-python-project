@@ -4,7 +4,7 @@
 1. /judge 端点 round-trip：cps_admin 角色正常 200
 2. /judge 端点：无 token（内网直连）放行 / 坏 token 401
 3. /judge 端点 403：非 cps_admin 角色
-4. /judge 端点 422：缺必填字段 fingerprint / roomType / checkItemId / photoObjectKey
+4. /judge 端点 422：缺必填字段 fingerprint / roomType / checkItemId
 5. /judge 端点 422：roomType 取值非法
 6. /rejudge 端点 403：非 cps_admin+cps_supervisor 角色
 7. /rejudge 端点 200 + cache_cleared=true（有缓存时）
@@ -37,8 +37,7 @@ def _payload(**over: Any) -> dict[str, Any]:
         "fingerprint": "rc-fp-001",
         "roomType": "PRIMARY",
         "checkItemId": "ci-001",
-        "photoObjectKey": "room/101/ground-1.jpg",
-        "photoUrl": None,
+        "photoUrl": "",
         "expectedMatchType": "地面",
         "expectedKeywords": ["无杂物", "无积水"],
     }
@@ -188,26 +187,14 @@ def test_judge_endpoint_invalid_room_type_422() -> None:
 
 
 def test_judge_endpoint_photo_url_only_accepted() -> None:
-    """仅 photoUrl（无 photoObjectKey）→ 仍可 200（端点允许互斥）。"""
+    """照片只有 photoUrl 一种形态：无照片不 422，URL 不可达走 fallback 仍 200。"""
     svc = _build_service_with_results(_scripted_pass_results())
     app = build_app(service=svc)
     resp = TestClient(app).post(
         "/api/v1/agent/room-checks/v2/judge",
-        json=_payload(photoObjectKey="", photoUrl="https://x.test/photo.jpg"),
+        json=_payload(photoUrl="https://x.test/photo.jpg"),
     )
     assert resp.status_code == 200
-
-
-def test_judge_endpoint_422_when_neither_photo_set() -> None:
-    """photoObjectKey + photoUrl 均缺失 → 422。"""
-    svc = _build_service_with_results(_scripted_pass_results())
-    app = build_app(service=svc)
-    resp = TestClient(app).post(
-        "/api/v1/agent/room-checks/v2/judge",
-        json=_payload(photoObjectKey="", photoUrl=None),
-    )
-    assert resp.status_code == 422
-    assert "photoObjectKey or photoUrl required" in resp.json()["detail"]
 
 
 def test_judge_endpoint_expected_keywords_string_csv_accepted() -> None:

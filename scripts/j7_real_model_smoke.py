@@ -167,6 +167,10 @@ async def smoke_c04(result: dict) -> None:
             {"object_key": key, "etag": etag, "bytes": size}
         )
 
+    # C-04 照片引用唯一形态：MinIO 公开绝对 URL（Python 侧 HTTP GET）
+    base = f"{minio.endpoint.rstrip('/')}/{minio.bucket}"
+    photo_urls = (f"{base}/{before_key}", f"{base}/{after_key}")
+
     svc = RoomCheckJudgeService(settings=settings)  # 生产路径：开关回退链解析
     judged = await svc.judge(
         JudgeRequest(
@@ -176,7 +180,7 @@ async def smoke_c04(result: dict) -> None:
             attempt=1,
             item_content="地面无杂物、无积水",
             item_type="地面",
-            photo_object_keys=(before_key, after_key),
+            photo_urls=photo_urls,
         )
     )
     section["status"] = judged.status  # JUDGED / SKIPPED

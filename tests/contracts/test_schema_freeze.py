@@ -65,8 +65,7 @@ C04_RESPONSE_KEYS = {
     "verdict",           # PASS/WARN/FAIL/TYPE_MISMATCH/CANNOT_JUDGE
     "reason",
     "evidence",
-    "photo_object_keys",
-    "photo_urls",        # Java 直传 URL 形态的照片引用（与 object_keys 二选一）
+    "photo_urls",        # 唯一形态：MinIO 公开绝对 URL（Java 直传原值回显）
     "item_snapshot",
     "stage_trace",       # 两段式判定轨迹
     "model_version",
@@ -244,7 +243,7 @@ def test_c04_technical_error_body_frozen() -> None:
     app.include_router(room_router, prefix="/api/v1")
     _principal_override(app)
     app.state.room_check_judge_service = _FailingService(
-        model_client=None, fetcher=None, settings=None  # type: ignore[arg-type]
+        model_client=None, settings=None  # type: ignore[arg-type]
     )
     resp = _post(app, "/api/v1/agent/room-checks/judge", json=_payload())
     assert resp.status_code == 502
