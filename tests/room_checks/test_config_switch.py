@@ -19,12 +19,12 @@ from app.core.config import (
     SpeechConfig,
     settings,
 )
-from app.projects.room_checks.infrastructure.config import (
+from app.projects.cps.room_checks.infrastructure.config import (
     ENV_LEGACY_MODEL_CHECK_ENABLED,
     ENV_ROOM_CHECKS_VISION_ENABLED,
     resolve_vision_enabled,
 )
-from app.projects.speech.infrastructure.config import (
+from app.projects.cps.speech.infrastructure.config import (
     ENV_SPEECH_ASR_ENABLED,
     resolve_asr_enabled,
 )
@@ -155,7 +155,7 @@ def test_initial_review_default_true_when_model_check_unset(
 ) -> None:
     """model_check.enabled 未配(None)时 C-01 仍默认开启(既有契约不变)。"""
     _swap_cps_agent(monkeypatch)
-    from app.projects.initial_review.infrastructure.config import (
+    from app.projects.cps.initial_review.infrastructure.config import (
         load_initial_review_settings,
     )
 

@@ -6,11 +6,11 @@ from __future__ import annotations
 
 import pytest
 
-from app.projects.weekly_report.domain.models import (
+from app.projects.cps.weekly_report.domain.models import (
     PUSH_STATUS_UNCONFIGURED,
     PushResult,
 )
-from app.projects.weekly_report.infrastructure.pusher import NoOpPusher
+from app.projects.cps.weekly_report.infrastructure.pusher import NoOpPusher
 
 
 @pytest.mark.asyncio
@@ -38,7 +38,7 @@ async def test_noop_pusher_does_not_raise():
 
 
 def test_noop_pusher_is_protocol():
-    from app.projects.weekly_report.infrastructure.pusher import (
+    from app.projects.cps.weekly_report.infrastructure.pusher import (
         WeeklyReportPusher,
     )
 

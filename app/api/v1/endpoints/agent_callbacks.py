@@ -21,20 +21,20 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from app.api.v1.endpoints.agent_runs import FrameworkRoute, Identity
 from app.core.datasource import DatasourceManager
 from app.core.datasource import datasources as shared_datasources
-from app.projects.initial_review.application.service import (
+from app.projects.cps.initial_review.application.service import (
     CallbackPushBudgetExhausted,
     InitialReviewService,
     ReplayConflict,
     TaskNotTerminal,
 )
-from app.projects.initial_review.domain.models import RectificationReviewRequest
-from app.projects.initial_review.infrastructure.callback import JavaCallbackClient
-from app.projects.initial_review.infrastructure.config import load_initial_review_settings
-from app.projects.initial_review.infrastructure.model_client import (
+from app.projects.cps.initial_review.domain.models import RectificationReviewRequest
+from app.projects.cps.initial_review.infrastructure.callback import JavaCallbackClient
+from app.projects.cps.initial_review.infrastructure.config import load_initial_review_settings
+from app.projects.cps.initial_review.infrastructure.model_client import (
     DashScopeModelClient,
     RustFSObjectFetcher,
 )
-from app.projects.initial_review.infrastructure.repository import InitialReviewRepository
+from app.projects.cps.initial_review.infrastructure.repository import InitialReviewRepository
 
 router = APIRouter(prefix="/agent", tags=["agent-initial-review"], route_class=FrameworkRoute)
 

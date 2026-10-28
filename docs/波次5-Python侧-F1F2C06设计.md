@@ -2,7 +2,7 @@
 
 - 基线：`23f04af`（main，波次 4 交付摘要提交）
 - 依据：PRD §20.2 / FR-15 / AC-03；决策记录 `docs/决策记录-20260926.md` D-03；契约 `docs/后端架构与技术设计考虑.md` C-06
-- 交付：`app/projects/speech/`（对齐 room_checks 波次 4 结构）+ `app/api/v1/endpoints/speech.py` + 配置节 + 测试
+- 交付：`app/projects/cps/speech/`（对齐 room_checks 波次 4 结构）+ `app/api/v1/endpoints/speech.py` + 配置节 + 测试
 
 ---
 
@@ -96,7 +96,7 @@ speech:
 ## 6. 代码结构（对齐 room_checks）
 
 ```
-app/projects/speech/
+app/projects/cps/speech/
   domain/models.py            # 三字段白名单/状态/请求结果模型/audio MIME 表
   application/service.py      # SpeechToTextService：校验→幂等→取音频→ASR→分类
   infrastructure/config.py    # SpeechSettings + load_speech_settings()

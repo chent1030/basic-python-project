@@ -11,22 +11,22 @@ import asyncio
 
 import pytest
 
-from app.projects.initial_review.infrastructure.config import (
+from app.projects.cps.initial_review.infrastructure.config import (
     InitialReviewSettings,
     ModelCheckSettings,
     RustFSSettings,
 )
-from app.projects.initial_review.infrastructure.model_client import (
+from app.projects.cps.initial_review.infrastructure.model_client import (
     FakeModelCheckClient,
     ModelCallError,
 )
-from app.projects.room_checks.application.service import (
+from app.projects.cps.room_checks.application.service import (
     JudgeRequestError,
     JudgeTechnicalError,
     RoomCheckJudgeService,
     derive_idempotency_key,
 )
-from app.projects.room_checks.domain.models import (
+from app.projects.cps.room_checks.domain.models import (
     STAGE_CONTENT_JUDGE,
     STAGE_TYPE_MATCH,
     STATUS_JUDGED,

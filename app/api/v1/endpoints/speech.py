@@ -20,19 +20,19 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.api.v1.endpoints.agent_runs import FrameworkRoute, Identity
-from app.projects.initial_review.infrastructure.config import (
+from app.projects.cps.initial_review.infrastructure.config import (
     load_initial_review_settings,
 )
-from app.projects.initial_review.infrastructure.model_client import RustFSObjectFetcher
-from app.projects.speech.application.service import (
+from app.projects.cps.initial_review.infrastructure.model_client import RustFSObjectFetcher
+from app.projects.cps.speech.application.service import (
     SpeechRequestError,
     SpeechTechnicalError,
     SpeechToTextService,
     derive_idempotency_key,
 )
-from app.projects.speech.domain.models import DEFAULT_AUDIO_FORMAT, SpeechTranscribeRequest
-from app.projects.speech.infrastructure.asr_client import OpenAiCompatibleAsrClient
-from app.projects.speech.infrastructure.config import load_speech_settings
+from app.projects.cps.speech.domain.models import DEFAULT_AUDIO_FORMAT, SpeechTranscribeRequest
+from app.projects.cps.speech.infrastructure.asr_client import OpenAiCompatibleAsrClient
+from app.projects.cps.speech.infrastructure.config import load_speech_settings
 
 log = logging.getLogger("cps_agent.speech")
 

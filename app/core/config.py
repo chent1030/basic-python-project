@@ -319,7 +319,7 @@ class JavaCallbackConfig(BaseModel):
     """C-02 回调 Java 侧地址。
 
     - base_url:env CPS_JAVA_CALLBACK_BASE_URL 优先(代码层,见
-      app/projects/initial_review/infrastructure/config.py),yaml 为默认值;
+      app/projects/cps/initial_review/infrastructure/config.py),yaml 为默认值;
     - path:契约固定路径 /api/callbacks/initial-review/result;
     - 技术重试 ≤2 次,30s/60s 退避(设计 §3.1)。
     """

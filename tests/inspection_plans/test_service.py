@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.projects.inspection_plans.application.service import (
+from app.projects.cps.inspection_plans.application.service import (
     DRAFT_MODEL_VERSION,
     TASK_TYPE_CHECK,
     TASK_TYPE_PATROL,

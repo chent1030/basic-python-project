@@ -34,23 +34,23 @@ from datetime import UTC, datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.projects.initial_review.domain.text_validity import FieldValidity
-from app.projects.initial_review.infrastructure.config import load_initial_review_settings
-from app.projects.initial_review.infrastructure.model_client import (
+from app.projects.cps.initial_review.domain.text_validity import FieldValidity
+from app.projects.cps.initial_review.infrastructure.config import load_initial_review_settings
+from app.projects.cps.initial_review.infrastructure.model_client import (
     DashScopeModelClient,
     ModelUnavailableError,
 )
-from app.projects.initial_review.infrastructure.prompts import (
+from app.projects.cps.initial_review.infrastructure.prompts import (
     build_text_validity_prompt,
 )
-from app.projects.room_checks.application.service import RoomCheckJudgeService
-from app.projects.room_checks.domain.models import JudgeRequest
-from app.projects.room_checks.infrastructure.config import resolve_vision_enabled
-from app.projects.speech.infrastructure.asr_client import (
+from app.projects.cps.room_checks.application.service import RoomCheckJudgeService
+from app.projects.cps.room_checks.domain.models import JudgeRequest
+from app.projects.cps.room_checks.infrastructure.config import resolve_vision_enabled
+from app.projects.cps.speech.infrastructure.asr_client import (
     AsrUnavailableError,
     OpenAiCompatibleAsrClient,
 )
-from app.projects.speech.infrastructure.config import (
+from app.projects.cps.speech.infrastructure.config import (
     load_speech_settings,
     resolve_asr_enabled,
 )
@@ -143,10 +143,10 @@ async def smoke_c04(result: dict) -> None:
         return
 
     # 自造两张纯色 PNG PUT 进 RustFS（同 key 覆盖 = 幂等可重跑）
-    from app.projects.weekly_report.infrastructure.config import (
+    from app.projects.cps.weekly_report.infrastructure.config import (
         WeeklyReportRustFSSettings,
     )
-    from app.projects.weekly_report.infrastructure.rustfs_uploader import (
+    from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
         RustFSWeeklyReportUploader,
     )
 

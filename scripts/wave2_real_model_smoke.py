@@ -25,15 +25,15 @@ import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.projects.initial_review.domain.image_compare import ImageCompareResult
-from app.projects.initial_review.domain.text_validity import FieldValidity
-from app.projects.initial_review.infrastructure.config import load_initial_review_settings
-from app.projects.initial_review.infrastructure.model_client import (
+from app.projects.cps.initial_review.domain.image_compare import ImageCompareResult
+from app.projects.cps.initial_review.domain.text_validity import FieldValidity
+from app.projects.cps.initial_review.infrastructure.config import load_initial_review_settings
+from app.projects.cps.initial_review.infrastructure.model_client import (
     DashScopeModelClient,
     ModelUnavailableError,
     RustFSObjectFetcher,
 )
-from app.projects.initial_review.infrastructure.prompts import (
+from app.projects.cps.initial_review.infrastructure.prompts import (
     build_image_compare_prompt,
     build_text_validity_prompt,
 )
@@ -116,7 +116,7 @@ async def main() -> int:
         print("提示：RustFS 未配置或仅给了一侧 object_key，退 base64 模式")
 
     if images is None:
-        from app.projects.initial_review.infrastructure.model_client import data_url
+        from app.projects.cps.initial_review.infrastructure.model_client import data_url
 
         images = [
             data_url("image/png", solid_png((120, 40, 40))),

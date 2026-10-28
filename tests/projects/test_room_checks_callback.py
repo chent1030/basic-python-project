@@ -19,12 +19,12 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 
-from app.projects.room_checks.domain.evidence_models import (
+from app.projects.cps.room_checks.domain.evidence_models import (
     JudgeVerdict,
     RoomCheckEvidence,
     RoomCheckVerdict,
 )
-from app.projects.room_checks.infrastructure.callback_client import (
+from app.projects.cps.room_checks.infrastructure.callback_client import (
     DEFAULT_BACKOFF,
     DEFAULT_MAX_RETRIES,
     DEFAULT_TIMEOUT_SECONDS,
@@ -32,7 +32,7 @@ from app.projects.room_checks.infrastructure.callback_client import (
     FakeRoomCheckCallbackClient,
     JavaRoomCheckCallbackClient,
 )
-from app.projects.room_checks.infrastructure.vision_client import (
+from app.projects.cps.room_checks.infrastructure.vision_client import (
     FakeVisionModelClient,
     VisionCallResult,
 )
@@ -244,10 +244,10 @@ async def test_fake_callback_propagates_exception_script() -> None:
 @pytest.mark.asyncio
 async def test_judge_service_invokes_callback_after_verdict() -> None:
     """judge 完成后异步 dispatch callback（fire-and-forget 模式）。"""
-    from app.projects.room_checks.application.judge_service import (
+    from app.projects.cps.room_checks.application.judge_service import (
         RoomCheckB6JudgeService,
     )
-    from app.projects.room_checks.domain.evidence_models import RoomType
+    from app.projects.cps.room_checks.domain.evidence_models import RoomType
 
     fake_cb = FakeRoomCheckCallbackClient()
     service = RoomCheckB6JudgeService(
@@ -279,10 +279,10 @@ async def test_judge_service_invokes_callback_after_verdict() -> None:
 @pytest.mark.asyncio
 async def test_judge_service_dispatch_pending_callbacks_drains() -> None:
     """drain_pending() 返回并清空待处理 callback（与 initial_review 同模式）。"""
-    from app.projects.room_checks.application.judge_service import (
+    from app.projects.cps.room_checks.application.judge_service import (
         RoomCheckB6JudgeService,
     )
-    from app.projects.room_checks.domain.evidence_models import RoomType
+    from app.projects.cps.room_checks.domain.evidence_models import RoomType
 
     fake_cb = FakeRoomCheckCallbackClient()
     service = RoomCheckB6JudgeService(

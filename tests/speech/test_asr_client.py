@@ -7,7 +7,7 @@ import json
 import httpx
 import pytest
 
-from app.projects.speech.infrastructure.asr_client import (
+from app.projects.cps.speech.infrastructure.asr_client import (
     AsrCallError,
     AsrUnavailableError,
     OpenAiCompatibleAsrClient,

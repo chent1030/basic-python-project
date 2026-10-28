@@ -12,13 +12,13 @@ from __future__ import annotations
 
 import pytest
 
-from app.projects.room_checks.infrastructure.prompt_builder import (
+from app.projects.cps.room_checks.infrastructure.prompt_builder import (
     PROMPT_VERSION_CONTENT,
     PROMPT_VERSION_EVIDENCE,
     PROMPT_VERSION_TYPE_MATCH,
     PromptBuilder,
 )
-from app.projects.room_checks.infrastructure.vision_client import (
+from app.projects.cps.room_checks.infrastructure.vision_client import (
     FakeVisionModelClient,
     VisionCallResult,
     VisionModelClient,
@@ -65,7 +65,7 @@ async def test_fake_vision_client_records_injected_prompt_and_images() -> None:
 @pytest.mark.asyncio
 async def test_fake_vision_client_propagates_model_unavailable() -> None:
     """预设 ``ModelUnavailableError`` 时直接抛出。"""
-    from app.projects.initial_review.infrastructure.model_client import (
+    from app.projects.cps.initial_review.infrastructure.model_client import (
         ModelUnavailableError,
     )
 

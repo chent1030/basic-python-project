@@ -15,7 +15,7 @@ r"""线 A5 check_text_rules 穷举边界单测（D-22 冻结口径 + M0 用户�
 
 from __future__ import annotations
 
-from app.projects.initial_review.domain.text_rules import (
+from app.projects.cps.initial_review.domain.text_rules import (
     ELLIPSIS_CHAR,
     check_rectification_texts,
     check_text_rules,

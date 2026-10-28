@@ -24,16 +24,16 @@ import httpx
 import pytest
 
 from app.models.agent_initial_review import AgentInitialReviewExec
-from app.projects.initial_review.application.check_pipeline import CheckPipeline
-from app.projects.initial_review.domain.text_rules import (
+from app.projects.cps.initial_review.application.check_pipeline import CheckPipeline
+from app.projects.cps.initial_review.domain.text_rules import (
     MIN_LENGTH,
     check_text_rules,
 )
-from app.projects.initial_review.infrastructure.config import (
+from app.projects.cps.initial_review.infrastructure.config import (
     RustFSSettings,
     load_initial_review_settings,
 )
-from app.projects.initial_review.infrastructure.model_client import (
+from app.projects.cps.initial_review.infrastructure.model_client import (
     FakeModelCheckClient,
     RustFSObjectFetcher,
 )

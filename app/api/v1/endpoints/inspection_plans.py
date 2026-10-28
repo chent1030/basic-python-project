@@ -14,7 +14,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.api.v1.endpoints.agent_runs import FrameworkRoute, Identity
-from app.projects.inspection_plans.application.service import (
+from app.projects.cps.inspection_plans.application.service import (
     DraftRequest,
     InspectionPlanDraftService,
 )

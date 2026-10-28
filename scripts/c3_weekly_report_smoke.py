@@ -21,19 +21,19 @@ from sqlalchemy import select
 
 from app.core.datasource import DatasourceManager, datasources
 from app.models.weekly_report import WeeklyReportRun
-from app.projects.weekly_report.application.service import (
+from app.projects.cps.weekly_report.application.service import (
     WeeklyReportService,
     compute_window,
 )
-from app.projects.weekly_report.domain.data_fetcher import StubDataFetcher
-from app.projects.weekly_report.infrastructure.config import (
+from app.projects.cps.weekly_report.domain.data_fetcher import StubDataFetcher
+from app.projects.cps.weekly_report.infrastructure.config import (
     load_weekly_report_settings,
 )
-from app.projects.weekly_report.infrastructure.pusher import NoOpPusher
-from app.projects.weekly_report.infrastructure.repository import (
+from app.projects.cps.weekly_report.infrastructure.pusher import NoOpPusher
+from app.projects.cps.weekly_report.infrastructure.repository import (
     WeeklyReportRepository,
 )
-from app.projects.weekly_report.infrastructure.rustfs_uploader import (
+from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
     RustFSWeeklyReportUploader,
 )
 from app.skills.weekly_report.skill import build_default_skill

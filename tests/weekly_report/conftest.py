@@ -9,21 +9,21 @@ import pytest
 import pytest_asyncio
 
 from app.models.weekly_report import WeeklyReportRun
-from app.projects.initial_review.infrastructure.config import (
+from app.projects.cps.initial_review.infrastructure.config import (
     RustFSSettings,
     load_initial_review_settings,
 )
-from app.projects.weekly_report.application.service import WeeklyReportService
-from app.projects.weekly_report.domain.data_fetcher import StubDataFetcher
-from app.projects.weekly_report.infrastructure.config import (
+from app.projects.cps.weekly_report.application.service import WeeklyReportService
+from app.projects.cps.weekly_report.domain.data_fetcher import StubDataFetcher
+from app.projects.cps.weekly_report.infrastructure.config import (
     WeeklyReportRustFSSettings,
     WeeklyReportSettings,
 )
-from app.projects.weekly_report.infrastructure.pusher import NoOpPusher
-from app.projects.weekly_report.infrastructure.repository import (
+from app.projects.cps.weekly_report.infrastructure.pusher import NoOpPusher
+from app.projects.cps.weekly_report.infrastructure.repository import (
     WeeklyReportRepository,
 )
-from app.projects.weekly_report.infrastructure.rustfs_uploader import (
+from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
     RustFSWeeklyReportUploader,
 )
 from app.skills.weekly_report.skill import build_default_skill

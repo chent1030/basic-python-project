@@ -69,7 +69,7 @@
 ## 5. 发现的产品问题（待确认，未修）
 
 ### BUG-1（中危）：CheckRunnerError 是死代码，TCP 级故障逃逸为 HTTP 500
-- `app/projects/initial_review/application/service.py:58` 定义、`:190` except（→FAILED+CHECK_ERROR），但**全库无任何 `raise CheckRunnerError`**
+- `app/projects/cps/initial_review/application/service.py:58` 定义、`:190` except（→FAILED+CHECK_ERROR），但**全库无任何 `raise CheckRunnerError`**
 - 逃逸路径：`check_pipeline.py:341 await self._rustfs.fetch_data_url(key)` → `model_client.py:295-303 fetch_bytes` 仅把 `resp.status_code!=200` 包成 ModelCallError（→DEGRADED，本波次已测）；**TCP 级 `httpx.ConnectError`（RustFS 不可达）裸抛**，穿过 stage 级 except(ModelCallError,TimeoutError) 与 _execute 级 except(CheckRunnerError) → submit 调用方收到未处理异常（HTTP 500），行卡 RUNNING 直到 status() 惰性扫描误标 TIMEOUT「进程可能在执行中崩溃」
 - 设计意图（FAILED+CHECK_ERROR+回调）不可达。建议：`_execute` 增 `except Exception` 兜底转 CheckRunnerError 语义，或 fetch_bytes 包 ConnectError。**待产品确认后另开波次修复**
 - 观察项（非 bug）：`WeeklyReportService.run_once` 返回 dict 不含 `run_no`（列表接口有）；若 Java 侧需要首跑判定，走 C-05 列表

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.projects.speech.infrastructure.config import SpeechSettings
+from app.projects.cps.speech.infrastructure.config import SpeechSettings
 
 
 def make_settings(**overrides: object) -> SpeechSettings:

@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from app.projects.weekly_report.domain.models import ReportWindow
+from app.projects.cps.weekly_report.domain.models import ReportWindow
 from app.skills.weekly_report.skill import (
     ReportSpec,
     build_default_skill,
@@ -96,7 +96,7 @@ def test_compute_window_contains_semantics():
     """window.contains 满足 [start, end) 含头不含尾（AC-28）。"""
     from zoneinfo import ZoneInfo
 
-    from app.projects.weekly_report.application.service import compute_window
+    from app.projects.cps.weekly_report.application.service import compute_window
 
     win = compute_window(now=datetime(2026, 5, 4, 8, 0, tzinfo=UTC))
     # 业务口径：Asia/Shanghai 周一 00:00（设计 §3.3）

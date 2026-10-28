@@ -13,11 +13,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.projects.weekly_report.application.service import (
+from app.projects.cps.weekly_report.application.service import (
     WeeklyReportService,
     compute_window,
 )
-from app.projects.weekly_report.domain.models import (
+from app.projects.cps.weekly_report.domain.models import (
     PUSH_STATUS_UNCONFIGURED,
     STATUS_COMPLETED,
     STATUS_FAILED,
@@ -29,7 +29,7 @@ async def test_run_once_full_path_completes_and_marks_push_unconfigured(
     make_session_factory, make_service, fixed_now
 ):
     # 注入 fake uploader（直接 mock 成功 PUT，跳过真实 RustFS）
-    from app.projects.weekly_report.infrastructure.rustfs_uploader import (
+    from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
         RustFSWeeklyReportUploader,
     )
 
@@ -79,7 +79,7 @@ async def test_run_once_full_path_completes_and_marks_push_unconfigured(
 async def test_run_once_idempotent_skips_when_already_completed(
     make_session_factory, make_service, fixed_now
 ):
-    from app.projects.weekly_report.infrastructure.rustfs_uploader import (
+    from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
         RustFSWeeklyReportUploader,
     )
 
@@ -108,7 +108,7 @@ async def test_run_once_marks_failed_when_uploader_unavailable(
     make_session_factory, make_service, fixed_now
 ):
     """归档不可用 → FAILED，不伪造「已归档」语义。"""
-    from app.projects.weekly_report.infrastructure.rustfs_uploader import (
+    from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
         RustFSWeeklyReportUploader,
     )
 
@@ -149,7 +149,7 @@ async def test_run_once_marks_failed_when_uploader_unavailable(
 async def test_run_once_records_push_with_attempted_at(
     make_session_factory, make_service, fixed_now
 ):
-    from app.projects.weekly_report.infrastructure.rustfs_uploader import (
+    from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
         RustFSWeeklyReportUploader,
     )
 
@@ -199,7 +199,7 @@ def test_compute_window_default_now():
 async def test_list_runs_returns_serialized_items(
     make_service, make_session_factory, fixed_now
 ):
-    from app.projects.weekly_report.infrastructure.rustfs_uploader import (
+    from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
         RustFSWeeklyReportUploader,
     )
 

@@ -16,12 +16,12 @@ import dataclasses
 import httpx
 import pytest
 
-from app.projects.initial_review.application.check_pipeline import CheckPipeline
-from app.projects.initial_review.domain.image_compare import ImageCompareResult
-from app.projects.initial_review.domain.models import AttachmentRef
-from app.projects.initial_review.domain.text_validity import FieldValidity
-from app.projects.initial_review.domain.verdicts import aggregate_overall
-from app.projects.initial_review.infrastructure.model_client import (
+from app.projects.cps.initial_review.application.check_pipeline import CheckPipeline
+from app.projects.cps.initial_review.domain.image_compare import ImageCompareResult
+from app.projects.cps.initial_review.domain.models import AttachmentRef
+from app.projects.cps.initial_review.domain.text_validity import FieldValidity
+from app.projects.cps.initial_review.domain.verdicts import aggregate_overall
+from app.projects.cps.initial_review.infrastructure.model_client import (
     ModelCallError,
     RustFSObjectFetcher,
     extract_json_object,
@@ -120,7 +120,7 @@ class NullClient:
 
 def rustfs_mock(payload: bytes = b"pngbytes") -> RustFSObjectFetcher:
     settings = make_settings()
-    from app.projects.initial_review.infrastructure.config import RustFSSettings
+    from app.projects.cps.initial_review.infrastructure.config import RustFSSettings
 
     cfg = RustFSSettings(
         endpoint="http://rustfs.test",
@@ -187,7 +187,7 @@ def test_extract_json_object(text: str, has_verdict: bool) -> None:
 
 
 async def test_text_validity_implemented_via_fake_client() -> None:
-    from app.projects.initial_review.infrastructure.model_client import (
+    from app.projects.cps.initial_review.infrastructure.model_client import (
         FakeModelCheckClient,
     )
 
@@ -203,7 +203,7 @@ async def test_text_validity_implemented_via_fake_client() -> None:
 
 
 async def test_text_validity_model_unavailable_marks_skipped() -> None:
-    from app.projects.initial_review.infrastructure.model_client import (
+    from app.projects.cps.initial_review.infrastructure.model_client import (
         FakeModelCheckClient,
     )
 
@@ -219,7 +219,7 @@ async def test_text_validity_model_unavailable_marks_skipped() -> None:
 
 
 async def test_text_validity_call_error_degrades_not_fakes() -> None:
-    from app.projects.initial_review.infrastructure.model_client import (
+    from app.projects.cps.initial_review.infrastructure.model_client import (
         FakeModelCheckClient,
     )
 
@@ -256,7 +256,7 @@ async def test_text_validity_field_budget_timeout_degrades() -> None:
 
 
 async def test_empty_field_skips_semantic_call() -> None:
-    from app.projects.initial_review.infrastructure.model_client import (
+    from app.projects.cps.initial_review.infrastructure.model_client import (
         FakeModelCheckClient,
     )
 
@@ -291,7 +291,7 @@ async def test_image_compare_no_attachments_skips() -> None:
 
 
 async def test_image_compare_one_side_missing_skips() -> None:
-    from app.projects.initial_review.infrastructure.model_client import (
+    from app.projects.cps.initial_review.infrastructure.model_client import (
         FakeModelCheckClient,
     )
 
@@ -310,7 +310,7 @@ async def test_image_compare_one_side_missing_skips() -> None:
 
 
 async def test_image_compare_base64_mode_end_to_end() -> None:
-    from app.projects.initial_review.infrastructure.model_client import (
+    from app.projects.cps.initial_review.infrastructure.model_client import (
         FakeModelCheckClient,
     )
 
@@ -344,7 +344,7 @@ async def test_image_compare_base64_mode_end_to_end() -> None:
 
 
 async def test_image_compare_object_key_mode_fetches_from_rustfs() -> None:
-    from app.projects.initial_review.infrastructure.model_client import (
+    from app.projects.cps.initial_review.infrastructure.model_client import (
         FakeModelCheckClient,
     )
 
@@ -368,8 +368,8 @@ async def test_image_compare_object_key_mode_fetches_from_rustfs() -> None:
 
 async def test_image_compare_rustfs_unavailable_skips() -> None:
     """RustFS 未配置（object_key 模式前置缺失）→ SKIPPED 不伪造。"""
-    from app.projects.initial_review.infrastructure.config import RustFSSettings
-    from app.projects.initial_review.infrastructure.model_client import (
+    from app.projects.cps.initial_review.infrastructure.config import RustFSSettings
+    from app.projects.cps.initial_review.infrastructure.model_client import (
         FakeModelCheckClient,
         RustFSObjectFetcher,
     )
@@ -392,7 +392,7 @@ async def test_image_compare_rustfs_unavailable_skips() -> None:
 
 async def test_image_compare_base64_replay_without_original_degrades() -> None:
     """重放执行（request=None）拿不到 base64 原文 → DEGRADED，不伪造结论。"""
-    from app.projects.initial_review.infrastructure.model_client import (
+    from app.projects.cps.initial_review.infrastructure.model_client import (
         FakeModelCheckClient,
     )
 
@@ -416,7 +416,7 @@ async def test_image_compare_base64_replay_without_original_degrades() -> None:
 
 async def test_image_compare_readings_mismatch_escalates_to_warn() -> None:
     """提交读数与照片不一致：PASS 也不得低于 WARN（照片与登记值矛盾）。"""
-    from app.projects.initial_review.infrastructure.model_client import (
+    from app.projects.cps.initial_review.infrastructure.model_client import (
         FakeModelCheckClient,
     )
 
@@ -449,7 +449,7 @@ async def test_image_compare_readings_mismatch_escalates_to_warn() -> None:
 
 
 async def test_image_compare_truncates_images_per_side() -> None:
-    from app.projects.initial_review.infrastructure.model_client import (
+    from app.projects.cps.initial_review.infrastructure.model_client import (
         FakeModelCheckClient,
     )
 

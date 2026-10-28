@@ -11,8 +11,8 @@ from fastapi.testclient import TestClient
 
 from app.api.v1.endpoints.agent_runs import Principal, principal
 from app.api.v1.endpoints.speech import router as speech_router
-from app.projects.speech.application.service import SpeechToTextService
-from app.projects.speech.infrastructure.asr_client import AsrTranscription, FakeAsrClient
+from app.projects.cps.speech.application.service import SpeechToTextService
+from app.projects.cps.speech.infrastructure.asr_client import AsrTranscription, FakeAsrClient
 from tests.speech.helpers import FakeAudioFetcher, make_settings
 
 B64 = base64.b64encode(b"fake-audio-bytes").decode("ascii")
@@ -154,7 +154,7 @@ def test_unconfigured_asr_returns_skipped_200():
 
 # --- 技术失败 502（不缓存，同键可重试）--------------------------------------
 def test_asr_failure_maps_to_502_with_error_code():
-    from app.projects.speech.infrastructure.asr_client import AsrCallError
+    from app.projects.cps.speech.infrastructure.asr_client import AsrCallError
 
     app = _build_app(service=_make_service(results=[AsrCallError("gateway 500")]))
     resp = _client(app).post("/api/v1/agent/speech-to-text", json=_payload())

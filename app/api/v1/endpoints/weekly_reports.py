@@ -19,9 +19,9 @@ from fastapi.responses import StreamingResponse
 from app.api.v1.endpoints.agent_runs import FrameworkRoute, Identity
 from app.core.datasource import DatasourceManager
 from app.core.datasource import datasources as shared_datasources
-from app.projects.weekly_report.application.service import WeeklyReportService
-from app.projects.weekly_report.domain.data_fetcher import StubDataFetcher
-from app.projects.weekly_report.infrastructure.config import (
+from app.projects.cps.weekly_report.application.service import WeeklyReportService
+from app.projects.cps.weekly_report.domain.data_fetcher import StubDataFetcher
+from app.projects.cps.weekly_report.infrastructure.config import (
     load_weekly_report_settings,
 )
 

@@ -89,16 +89,16 @@ judge(req)
   `CPS_INITIAL_REVIEW_MODEL_CHECK_ENABLED` / `CPS_STORAGE_*` 同套生效
   （initial_review 与 room_checks 同开同关，部署心智一致——待确认④是否需独立开关）。
 - 模型客户端/取图器/结构化输出容错解析（剥围栏→校验→错误回喂重试 1 次→
-  两次无效判技术失败）全部复用 `app/projects/initial_review/infrastructure/
+  两次无效判技术失败）全部复用 `app/projects/cps/initial_review/infrastructure/
   model_client.py`，本波次不复制实现；测试注入 `FakeModelCheckClient` + Fake 取图器。
 
 ## 4. 代码结构（对齐现有项目分层）
 
 | 文件 | 职责 |
 |---|---|
-| `app/projects/room_checks/domain/models.py` | C-04 状态枚举、JudgeRequest/JudgeResult、视觉输出 pydantic schema（TypeMatchSchema/ContentJudgeSchema） |
-| `app/projects/room_checks/application/service.py` | RoomCheckJudgeService：幂等缓存 + 判定链编排 + SKIPPED/技术失败分流（JudgeRequestError→422、JudgeTechnicalError→502） |
-| `app/projects/room_checks/infrastructure/prompts.py` | 两阶段 prompt 常量（版本化） |
+| `app/projects/cps/room_checks/domain/models.py` | C-04 状态枚举、JudgeRequest/JudgeResult、视觉输出 pydantic schema（TypeMatchSchema/ContentJudgeSchema） |
+| `app/projects/cps/room_checks/application/service.py` | RoomCheckJudgeService：幂等缓存 + 判定链编排 + SKIPPED/技术失败分流（JudgeRequestError→422、JudgeTechnicalError→502） |
+| `app/projects/cps/room_checks/infrastructure/prompts.py` | 两阶段 prompt 常量（版本化） |
 | `app/api/v1/endpoints/room_checks.py` | 端点：入参规整 + 鉴权 + 状态码映射（C-07 同款惰性 app.state 装配） |
 | `app/api/v1/router.py` | 挂载 room_checks.router（+2 行） |
 | `tests/room_checks/test_service.py`、`test_endpoint.py` | 19 个测试（见 §5） |

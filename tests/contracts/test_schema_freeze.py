@@ -229,7 +229,7 @@ def test_c04_response_schema_frozen() -> None:
 def test_c04_technical_error_body_frozen() -> None:
     """502 技术失败体：detail 内嵌 error_code/message（B6 口径）。"""
     from app.api.v1.endpoints.room_checks import router as room_router
-    from app.projects.room_checks.application.service import (
+    from app.projects.cps.room_checks.application.service import (
         JudgeTechnicalError,
         RoomCheckJudgeService,
     )
@@ -261,8 +261,8 @@ def _c06_app() -> tuple[FastAPI, Any]:
     import base64
 
     from app.api.v1.endpoints.speech import router as speech_router
-    from app.projects.speech.application.service import SpeechToTextService
-    from app.projects.speech.infrastructure.asr_client import (
+    from app.projects.cps.speech.application.service import SpeechToTextService
+    from app.projects.cps.speech.infrastructure.asr_client import (
         AsrTranscription,
         FakeAsrClient,
     )

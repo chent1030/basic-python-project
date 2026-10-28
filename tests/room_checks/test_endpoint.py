@@ -14,13 +14,13 @@ from fastapi.testclient import TestClient
 
 from app.api.v1.endpoints.agent_runs import Principal, principal
 from app.api.v1.endpoints.room_checks import router as room_checks_router
-from app.projects.initial_review.infrastructure.model_client import FakeModelCheckClient
-from app.projects.room_checks.application.service import (
+from app.projects.cps.initial_review.infrastructure.model_client import FakeModelCheckClient
+from app.projects.cps.room_checks.application.service import (
     JudgeRequestError,
     JudgeTechnicalError,
     RoomCheckJudgeService,
 )
-from app.projects.room_checks.domain.models import ContentJudgeSchema, TypeMatchSchema
+from app.projects.cps.room_checks.domain.models import ContentJudgeSchema, TypeMatchSchema
 from tests.room_checks.test_service import FakeFetcher, make_settings
 
 PASS_RESULTS = [

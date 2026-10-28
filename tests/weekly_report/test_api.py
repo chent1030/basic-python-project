@@ -20,11 +20,11 @@ from fastapi.testclient import TestClient
 from app.api.v1.endpoints import agent_runs
 from app.api.v1.endpoints import weekly_reports as wr_endpoint
 from app.api.v1.endpoints.weekly_reports import router
-from app.projects.weekly_report.application.service import (
+from app.projects.cps.weekly_report.application.service import (
     WeeklyReportService,
     compute_window,
 )
-from app.projects.weekly_report.domain.models import (
+from app.projects.cps.weekly_report.domain.models import (
     PUSH_STATUS_UNCONFIGURED,
     STATUS_COMPLETED,
 )
@@ -54,7 +54,7 @@ def _build_app(svc: WeeklyReportService) -> tuple[FastAPI, TestClient]:
 async def test_list_endpoint_returns_items_with_unavailable_reason(
     make_service, fixed_now
 ):
-    from app.projects.weekly_report.infrastructure.rustfs_uploader import (
+    from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
         RustFSWeeklyReportUploader,
     )
 
@@ -93,7 +93,7 @@ async def test_download_endpoint_returns_404_when_not_completed(
 async def test_download_endpoint_returns_streamed_html_when_completed(
     make_service, fixed_now
 ):
-    from app.projects.weekly_report.infrastructure.rustfs_uploader import (
+    from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
         RustFSWeeklyReportUploader,
     )
 
@@ -125,7 +125,7 @@ async def test_download_endpoint_returns_streamed_html_when_completed(
 async def test_list_endpoint_filters_by_report_type(
     make_service, fixed_now
 ):
-    from app.projects.weekly_report.infrastructure.rustfs_uploader import (
+    from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
         RustFSWeeklyReportUploader,
     )
 

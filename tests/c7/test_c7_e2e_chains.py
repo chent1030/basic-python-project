@@ -21,9 +21,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.models.agent_initial_review import AgentInitialReviewExec
-from app.projects.initial_review.application.service import InitialReviewService
-from app.projects.initial_review.infrastructure.model_client import extract_json_object
-from app.projects.room_checks.infrastructure.vision_client import (
+from app.projects.cps.initial_review.application.service import InitialReviewService
+from app.projects.cps.initial_review.infrastructure.model_client import extract_json_object
+from app.projects.cps.room_checks.infrastructure.vision_client import (
     FakeVisionModelClient,
     VisionCallResult,
 )
@@ -376,7 +376,7 @@ async def test_chain3_three_stage_judgment_pass_contract() -> None:
     """链 3-1：B6 三级判定（type-match → content → evidence）整体 PASS：
     type_match=true + content_match=true + evidence_strong → score=100 + overall=PASS。
     """
-    from app.projects.room_checks.application.judge_service import RoomCheckB6JudgeService
+    from app.projects.cps.room_checks.application.judge_service import RoomCheckB6JudgeService
     vision = _vision_with([_typed_ok(), _content_pass(), _evidence_pass()])
     service = RoomCheckB6JudgeService(vision_client=vision)
     app = build_room_checks_app(service=service)
@@ -405,8 +405,8 @@ async def test_chain3_three_stage_short_circuit_on_type_mismatch() -> None:
     """链 3-2：一级 type-match 不匹配 → content_judge / evidence 全部 NOT_REACHED，
     整体 PROBLEM + score=0（避免无效重试浪费模型配额）。
     """
-    from app.projects.room_checks.application.judge_service import RoomCheckB6JudgeService
-    from app.projects.room_checks.infrastructure.vision_client import VisionCallResult
+    from app.projects.cps.room_checks.application.judge_service import RoomCheckB6JudgeService
+    from app.projects.cps.room_checks.infrastructure.vision_client import VisionCallResult
 
     vision = _vision_with([VisionCallResult(
         raw_text='{"matched": false, "observed_type": "天花板", "reason": "主体不符"}',
@@ -437,7 +437,7 @@ async def test_chain3_three_stage_short_circuit_on_type_mismatch() -> None:
 async def test_chain3_lru_ttl_idempotent_replay() -> None:
     """链 3-3：LRU+TTL 幂等（同 fingerprint 30 分钟内复用 verdict，模型不重复调用）。
     """
-    from app.projects.room_checks.application.judge_service import RoomCheckB6JudgeService
+    from app.projects.cps.room_checks.application.judge_service import RoomCheckB6JudgeService
     vision = _vision_with([_typed_ok(), _content_pass(), _evidence_pass()])
     service = RoomCheckB6JudgeService(vision_client=vision)
     app = build_room_checks_app(service=service)
@@ -461,7 +461,7 @@ async def test_chain3_lru_ttl_idempotent_replay() -> None:
 async def test_chain3_rejudge_invalidates_cache_and_reruns() -> None:
     """链 3-4：rejudge 清缓存重跑（同 fingerprint 第二次判定用新结果，覆盖原 verdict）。
     """
-    from app.projects.room_checks.application.judge_service import RoomCheckB6JudgeService
+    from app.projects.cps.room_checks.application.judge_service import RoomCheckB6JudgeService
     # 第一组（PASS ×3）+ 第二组（PASS ×3）
     vision = _vision_with(
         [_typed_ok(), _content_pass(), _evidence_pass()] * 2
@@ -684,7 +684,7 @@ async def test_j_invariant_initial_review_5_states_observed() -> None:
     assert row is not None and row.status == "COMPLETED"
 
     # 状态 2：FAILED（异参重放 → ReplayConflict）
-    from app.projects.initial_review.application.service import ReplayConflict
+    from app.projects.cps.initial_review.application.service import ReplayConflict
     with pytest.raises(ReplayConflict):
         await service.submit(make_request(
             issue_id="ISS-S1", version_no=1, submission_id="DIFF"))
@@ -778,7 +778,7 @@ async def test_j_invariant_weekly_report_5_states_and_push_status_independent() 
 
     直接验证两套枚举常量的存在性 + 互不干扰（不触发完整 run 链路）。
     """
-    from app.projects.weekly_report.domain.models import (
+    from app.projects.cps.weekly_report.domain.models import (
         PUSH_STATUS_FAILED,
         PUSH_STATUS_PENDING,
         PUSH_STATUS_SKIPPED,
@@ -808,7 +808,7 @@ async def test_j_invariant_inspection_plan_three_task_types_idempotent() -> None
     """J-4：inspection_plan 三类任务（INSPECT_RECTIFY/INSPECT_PATROL/INSPECT_CHECK）
     同 idempotency_key 重放 → draft_id 稳定 + status="REPLAYED"。
     """
-    from app.projects.inspection_plans.application.service import (
+    from app.projects.cps.inspection_plans.application.service import (
         ALL_TASK_TYPES,
         TASK_TYPE_CHECK,
         TASK_TYPE_PATROL,

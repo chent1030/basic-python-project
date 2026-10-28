@@ -17,13 +17,13 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.api.v1.endpoints.agent_runs import FrameworkRoute, Identity
-from app.projects.room_checks.application.service import (
+from app.projects.cps.room_checks.application.service import (
     JudgeRequestError,
     JudgeTechnicalError,
     RoomCheckJudgeService,
     derive_idempotency_key,
 )
-from app.projects.room_checks.domain.models import ENDPOINT_MAX_PHOTOS, JudgeRequest
+from app.projects.cps.room_checks.domain.models import ENDPOINT_MAX_PHOTOS, JudgeRequest
 
 log = logging.getLogger("cps_agent.room_checks")
 

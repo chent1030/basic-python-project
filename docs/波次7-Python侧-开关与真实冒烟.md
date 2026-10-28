@@ -40,9 +40,9 @@ C-01+C-04），现在只想单独恢复 C-04 → 必须允许新 yaml `room_chec
   新增 `RoomChecksConfig`/`RoomChecksVisionConfig`、`AsrSwitchConfig`；
   `SpeechConfig` 增 `asr` 字段（`enabled` 保留为旧开关）；
   `CpsAgentConfig` 增 `room_checks` 字段。
-- 新建 `app/projects/room_checks/infrastructure/config.py`：
+- 新建 `app/projects/cps/room_checks/infrastructure/config.py`：
   `resolve_vision_enabled(env) -> tuple[bool, str]`（返回决策来源说明，进 SKIPPED reason）。
-- `app/projects/speech/infrastructure/config.py`：`resolve_asr_enabled(env)` 同款；
+- `app/projects/cps/speech/infrastructure/config.py`：`resolve_asr_enabled(env)` 同款；
   禁用文案列出开关链，运维一眼看出该配哪个。
 - `RoomCheckJudgeService.__init__` 增 `vision_enabled: bool | None` 显式注入
   （测试用；None → 走生产回退链），`judge()` 开关判断改用解析结果，

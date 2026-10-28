@@ -20,11 +20,11 @@ import asyncio
 
 import pytest
 
-from app.projects.initial_review.infrastructure.model_client import (
+from app.projects.cps.initial_review.infrastructure.model_client import (
     ModelCallError,
     ModelUnavailableError,
 )
-from app.projects.room_checks.application.judge_service import (
+from app.projects.cps.room_checks.application.judge_service import (
     FALLBACK_TIMEOUT_REASON,
     SCORE_DEDUCT_CONTENT_MISMATCH,
     SCORE_DEDUCT_EVIDENCE_VAGUE,
@@ -35,13 +35,13 @@ from app.projects.room_checks.application.judge_service import (
     JudgeRequestError,
     RoomCheckB6JudgeService,
 )
-from app.projects.room_checks.domain.evidence_models import (
+from app.projects.cps.room_checks.domain.evidence_models import (
     JudgeVerdict,
 )
-from app.projects.room_checks.infrastructure.callback_client import (
+from app.projects.cps.room_checks.infrastructure.callback_client import (
     FakeRoomCheckCallbackClient,
 )
-from app.projects.room_checks.infrastructure.vision_client import (
+from app.projects.cps.room_checks.infrastructure.vision_client import (
     FakeVisionModelClient,
     VisionCallResult,
 )

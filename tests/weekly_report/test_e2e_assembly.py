@@ -20,15 +20,15 @@ from fastapi.testclient import TestClient
 
 from app.api.v1.endpoints import agent_runs
 from app.api.v1.endpoints.weekly_reports import router as wr_router
-from app.projects.weekly_report.application.service import (
+from app.projects.cps.weekly_report.application.service import (
     WeeklyReportService,
     compute_window,
 )
-from app.projects.weekly_report.domain.models import (
+from app.projects.cps.weekly_report.domain.models import (
     PUSH_STATUS_UNCONFIGURED,
     STATUS_COMPLETED,
 )
-from app.projects.weekly_report.infrastructure.rustfs_uploader import (
+from app.projects.cps.weekly_report.infrastructure.rustfs_uploader import (
     RustFSWeeklyReportUploader,
 )
 
@@ -174,7 +174,7 @@ async def test_c08_download_headers_and_body_frozen(make_service, fixed_now):
 
 async def test_c08_download_rejects_uncompleted_run(make_service, fixed_now):
     """状态保护：非 COMPLETED（上传失败 FAILED）行不可下载 → 404。"""
-    from app.projects.weekly_report.domain.models import STATUS_FAILED
+    from app.projects.cps.weekly_report.domain.models import STATUS_FAILED
 
     uploader = AsyncMock(spec=RustFSWeeklyReportUploader)
     uploader.available = False  # 触发 FAILED

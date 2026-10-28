@@ -9,13 +9,13 @@ import pytest
 from sqlalchemy import func, select
 
 from app.models.agent_initial_review import AgentInitialReviewExec
-from app.projects.initial_review.application.service import (
+from app.projects.cps.initial_review.application.service import (
     CallbackPushBudgetExhausted,
     InitialReviewService,
     ReplayConflict,
     TaskNotTerminal,
 )
-from app.projects.initial_review.infrastructure.callback import JavaCallbackClient
+from app.projects.cps.initial_review.infrastructure.callback import JavaCallbackClient
 from tests.initial_review.conftest import (
     VALID_REASON,
     FakeCallbackClient,

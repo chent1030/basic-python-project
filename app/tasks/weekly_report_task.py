@@ -17,13 +17,13 @@ from __future__ import annotations
 import logging
 
 from app.core.scheduler import scheduled
-from app.projects.weekly_report.application.service import (
+from app.projects.cps.weekly_report.application.service import (
     WeeklyReportService,
     build_default_service,
     compute_window,
 )
-from app.projects.weekly_report.domain.data_fetcher import StubDataFetcher
-from app.projects.weekly_report.infrastructure.config import (
+from app.projects.cps.weekly_report.domain.data_fetcher import StubDataFetcher
+from app.projects.cps.weekly_report.infrastructure.config import (
     load_weekly_report_settings,
 )
 

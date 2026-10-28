@@ -847,6 +847,12 @@ app/
 
 初期可按上述层级组织单体模块；某个上下文复杂后再拆内部 domain/application/infrastructure，不为了目录完整性创建大量空模块。组合和领域规则应保持与 SDK 解耦。
 
+`app/projects/` 按「一个项目一个独立目录」组织：CPS 巡检业务的所有项目包统一收拢在
+`app/projects/cps/` 下（`initial_review/`、`inspection_plans/`、`room_checks/`、
+`speech/`、`weekly_report/` 等业务子包），模块导入形态为
+`app.projects.cps.<子包>.<层>.<模块>`；`doc_review/`、`construction_plan_review/`
+为独立框架示例项目，`agent_examples.py`、`agent_advanced.py` 为示例文件。
+
 ## 16. 与现有代码集成
 
 已有实现可作为迁移起点，但不能直接视为生产完整能力：

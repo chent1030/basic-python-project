@@ -17,9 +17,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 import app.models  # noqa: F401  # 注册全部 ORM 到 Base.metadata
 from app.db.base import Base
-from app.projects.initial_review.application.service import InitialReviewService
-from app.projects.initial_review.domain.models import RectificationReviewRequest
-from app.projects.initial_review.infrastructure.config import InitialReviewSettings
+from app.projects.cps.initial_review.application.service import InitialReviewService
+from app.projects.cps.initial_review.domain.models import RectificationReviewRequest
+from app.projects.cps.initial_review.infrastructure.config import InitialReviewSettings
 
 
 def naive_utc_now() -> datetime:

@@ -1,6 +1,6 @@
 # 波次 3 Python/Agent 侧：C1 报告 Skill + C2 报告 Agent + C3 调度 + C4 归档 + C6 推送 + C-05/C-08 端点 + **C-07 计划草稿**
 
-> 日期：2026-09-26 ｜ 范围：basic-project `app/skills/weekly_report/` + `app/projects/weekly_report/` + `app/projects/inspection_plans/`
+> 日期：2026-09-26 ｜ 范围：basic-project `app/skills/weekly_report/` + `app/projects/cps/weekly_report/` + `app/projects/cps/inspection_plans/`
 > 基线：波次 2（4a11fe6 初审检查管线）+ 远端「架构重新修改」已合入
 > 总原则：AI 输出只是意见；上传成功≠推送成功；未接入推送显示「推送未配置」。
 
@@ -11,7 +11,7 @@
 - `templates.py` 维护 `REPORT_TEMPLATES` 注册表（按 `report_type` → `ReportTemplate`），未命中 fallback `generic`
 - 产物：`text/html; charset=utf-8`，含周编号、窗口、生成时间、数据摘要段落
 
-## 2. C2 报告 Agent（`app/projects/weekly_report/application/service.py`）
+## 2. C2 报告 Agent（`app/projects/cps/weekly_report/application/service.py`）
 
 `WeeklyReportService.run_once(report_type, window)` 编排（流程同既有 initial_review 降级三态）：
 
@@ -38,7 +38,7 @@
   - `archive_object_key` 路径约定：`weekly-reports/{report_type}/{yyyy-Ww}/{seq}.html`
   - `UNIQUE(report_type, window_start, window_end)` 兜底同窗口幂等
 
-## 5. C6 推送接口预留（`app/projects/weekly_report/infrastructure/pusher.py`）
+## 5. C6 推送接口预留（`app/projects/cps/weekly_report/infrastructure/pusher.py`）
 
 - `Pusher` 接口：`async send(run_id, payload) → PushResult`
 - `NoOpPusher` 默认实现：`push_status = UNCONFIGURED`，`push_result = "推送未配置"`（AC-29）
@@ -54,7 +54,7 @@
 
 > 上一波次 Java `CpsAgentFrameworkClient.requestInspectionPlanDraft` 已就位，本波次完成 Python/Sel-server 端。
 
-- **服务**（`app/projects/inspection_plans/application/service.py`）：
+- **服务**（`app/projects/cps/inspection_plans/application/service.py`）：
   - `InspectionPlanDraftService.draft(req) → DraftResult`
   - 幂等：进程内 LRU+TTL 缓存（key=`idempotency_key`，TTL=24h）；重放同 key 返回同 `draft_id` + `status=REPLAYED`
   - 任务蓝图：`plan_type` 决定三类任务优先级权重

@@ -19,12 +19,12 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from app.api.v1.endpoints.agent_runs import principal
-from app.projects.room_checks.application.judge_service import RoomCheckB6JudgeService
-from app.projects.room_checks.domain.evidence_models import JudgeVerdict
-from app.projects.room_checks.infrastructure.callback_client import (
+from app.projects.cps.room_checks.application.judge_service import RoomCheckB6JudgeService
+from app.projects.cps.room_checks.domain.evidence_models import JudgeVerdict
+from app.projects.cps.room_checks.infrastructure.callback_client import (
     FakeRoomCheckCallbackClient,
 )
-from app.projects.room_checks.infrastructure.vision_client import (
+from app.projects.cps.room_checks.infrastructure.vision_client import (
     FakeVisionModelClient,
     VisionCallResult,
 )
@@ -209,7 +209,7 @@ def test_judge_endpoint_expected_keywords_string_csv_accepted() -> None:
 # -- /rejudge 测试 ------------------------------------------------------------
 def test_rejudge_endpoint_clears_cache_when_present() -> None:
     """有缓存时 → 200 + cache_cleared=true。"""
-    from app.projects.room_checks.domain.evidence_models import (
+    from app.projects.cps.room_checks.domain.evidence_models import (
         RoomCheckVerdict,
     )
 

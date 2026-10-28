@@ -135,7 +135,7 @@ Body: {
 
 ### 5.2 Python 端实现
 
-`JavaRoomCheckCallbackClient`（`app/projects/room_checks/infrastructure/callback_client.py`）：
+`JavaRoomCheckCallbackClient`（`app/projects/cps/room_checks/infrastructure/callback_client.py`）：
 - httpx AsyncClient，每请求新建（提交频率低不值得连接池）
 - 30s timeout + 最多 2 次重试（共 3 次尝试）+ 退避 (1.0s, 3.0s)
 - fingerprint URL 模板注入防御（拒绝含 `/`、`{`、`}` 的 fingerprint）
@@ -156,7 +156,7 @@ Body: {
 
 ```
 basic-project/
-├── app/projects/room_checks/
+├── app/projects/cps/room_checks/
 │   ├── domain/
 │   │   ├── evidence_models.py          # B6 领域模型（RoomType/JudgeVerdict/RoomCheckEvidence/RoomCheckVerdict）
 │   │   └── models.py                    # 既有 C-04 模型（不动）

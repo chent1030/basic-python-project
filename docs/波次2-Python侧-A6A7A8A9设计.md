@@ -1,6 +1,6 @@
 # 波次 2 Python/Agent 侧：A6 雷同性 + A7 视觉比对 + A8 文本有效性 + A9 意见汇总
 
-> 日期：2026-09-26 ｜ 范围：basic-project `app/projects/initial_review/`
+> 日期：2026-09-26 ｜ 范围：basic-project `app/projects/cps/initial_review/`
 > 基线：波次 1（410c0c8 文本规则引擎 + C-01/C-02/C-03 骨架）+ J0 联调（369313f）
 > 总原则（PRD §28.4 / ADR）：AI 输出只是意见；技术失败/不可用不得冒充内容判定、不得伪造通过。
 

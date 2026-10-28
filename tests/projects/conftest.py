@@ -17,8 +17,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.v1.endpoints.agent_runs import Principal, principal
-from app.projects.room_checks.api.router import router as b6_router
-from app.projects.room_checks.application.judge_service import RoomCheckB6JudgeService
+from app.projects.cps.room_checks.api.router import router as b6_router
+from app.projects.cps.room_checks.application.judge_service import RoomCheckB6JudgeService
 
 
 def naive_utc_now() -> datetime:
@@ -29,7 +29,7 @@ def make_evidence(**over: Any):
     """构造最小可用的 RoomCheckEvidence 默认值。"""
     from datetime import datetime
 
-    from app.projects.room_checks.domain.evidence_models import (
+    from app.projects.cps.room_checks.domain.evidence_models import (
         RoomCheckEvidence,
         RoomType,
     )

@@ -22,7 +22,7 @@ from app.api.v1.endpoints import (
 from app.api.v1.endpoints import (
     datasources as ds,
 )
-from app.projects.room_checks.api import router as room_checks_b6_router_module
+from app.projects.cps.room_checks.api import router as room_checks_b6_router_module
 from app.skill.coverage.api import coverage_router
 from app.skill.effect_evaluation.api import effect_router
 from app.skill.memory.api import memory_router

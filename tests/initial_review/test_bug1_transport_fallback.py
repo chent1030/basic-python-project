@@ -14,8 +14,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from app.projects.initial_review.application.check_pipeline import CheckPipeline
-from app.projects.initial_review.infrastructure.model_client import (
+from app.projects.cps.initial_review.application.check_pipeline import CheckPipeline
+from app.projects.cps.initial_review.infrastructure.model_client import (
     ModelCallError,
     RustFSObjectFetcher,
     RustFSSettings,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.projects.initial_review.domain.measure_similarity import (
+from app.projects.cps.initial_review.domain.measure_similarity import (
     MEASURE_SIMILARITY_RULE_VERSION,
     check_measure_similarity,
     similarity_score,

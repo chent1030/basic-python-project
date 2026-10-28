@@ -126,18 +126,18 @@
 ## 5. 与 AI 初审的集成点（FR-09 主诉求「自主进化」）
 
 ### 5.1 修改点
-- `app/projects/initial_review/infrastructure/prompts.py`：
+- `app/projects/cps/initial_review/infrastructure/prompts.py`：
   - `TEXT_VALIDITY_PROMPT_VERSION` 升到 `text-validity/qwen-plus@3`
   - `IMAGE_COMPARE_PROMPT_VERSION` 升到 `image-compare/qwen-vl@3`
   - 新增 `HISTORICAL_HINT_SECTION`（`{hints_json}` 占位符）
   - `build_text_validity_prompt` / `build_image_compare_prompt` 新增
     `historical_hints: str | None = None` 参数，仅当 hints 非空时拼接。
 
-- `app/projects/initial_review/application/check_pipeline.py`：
+- `app/projects/cps/initial_review/application/check_pipeline.py`：
   - `_text_validity` / `_image_compare` 接收 `historical_hints`；从
     `snapshot["historical_hints_json"]` 读取。
 
-- `app/projects/initial_review/application/service.py`：
+- `app/projects/cps/initial_review/application/service.py`：
   - `InitialReviewService.__init__` 新增 `memory_retriever: Any | None = None`
   - 新增 `_retrieve_historical_hints(row, snapshot)` 方法：构建 issue_dto → 调
     `memory_retriever.retrieve_context_for_issue(issue_dto, top_k=5)` →

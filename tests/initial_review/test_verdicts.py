@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.projects.initial_review.domain.verdicts import (
+from app.projects.cps.initial_review.domain.verdicts import (
     aggregate_overall,
     composite_model_version,
     worst_verdict,

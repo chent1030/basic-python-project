@@ -9,22 +9,22 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.projects.initial_review.infrastructure.model_client import (
+from app.projects.cps.initial_review.infrastructure.model_client import (
     ModelCallError,
     ModelUnavailableError,
 )
-from app.projects.speech.application.service import (
+from app.projects.cps.speech.application.service import (
     SpeechRequestError,
     SpeechTechnicalError,
     SpeechToTextService,
     derive_idempotency_key,
 )
-from app.projects.speech.domain.models import (
+from app.projects.cps.speech.domain.models import (
     STATUS_SKIPPED,
     STATUS_TRANSCRIBED,
     SpeechTranscribeRequest,
 )
-from app.projects.speech.infrastructure.asr_client import (
+from app.projects.cps.speech.infrastructure.asr_client import (
     AsrCallError,
     AsrTranscription,
     FakeAsrClient,
@@ -243,10 +243,10 @@ async def test_object_key_oversize_rejected():
 
 def test_cache_ttl_expiry():
     """TTL 过期后缓存失效（用注入时钟驱动 monotonic 不可行，直接操纵缓存）。"""
-    import app.projects.speech.application.service as svc_mod
+    import app.projects.cps.speech.application.service as svc_mod
 
     cache = svc_mod._ResultCache(ttl_seconds=0.01)
-    from app.projects.speech.domain.models import SpeechTranscribeResult
+    from app.projects.cps.speech.domain.models import SpeechTranscribeResult
 
     result = SpeechTranscribeResult(
         idempotency_key="k", submission_id="s", field="reason",
